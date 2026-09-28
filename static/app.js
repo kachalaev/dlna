@@ -23,9 +23,9 @@ function navigateListing({ folder = "", q = "" } = {}) {
   render();
 }
 
-function showWatch(id) {
+function showWatch(id, options) {
   history.pushState({}, "", `/watch/${id}`);
-  render();
+  render(options);
 }
 
 async function playableFiles(video) {
@@ -47,7 +47,7 @@ async function openSibling(video, step) {
   const target = index >= 0 ? files[index + step] : null;
   if (!target) return;
   history.pushState({}, "", `/watch/${target.id}`);
-  await render({ autoplay: true });
+  await render({ autoplay: true, resume: false });
   if (!stayFullscreen || renderGen !== gen + 1) return;
   const stage = playerEl.querySelector(".stage") || playerEl.querySelector("video");
   const enter = stage && (stage.requestFullscreen || stage.webkitRequestFullscreen);
@@ -154,6 +154,81 @@ function note(text) {
   node.className = "note";
   node.textContent = text;
   return node;
+}
+
+const RESUME_KEY = "archive-resume";
+const resumeEl = document.querySelector("#resume");
+let playback = null;
+let resumeTick = 0;
+
+function readResume() {
+  try {
+    const data = JSON.parse(localStorage.getItem(RESUME_KEY) || "");
+    const time = Number(data.time);
+    if (!data || !Number.isFinite(Number(data.id)) || !Number.isFinite(time) || time < 0) return null;
+    return { id: Number(data.id), name: String(data.name || "Ролик"), time };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeResume(video, time) {
+  const safe = Math.max(0, Number(time) || 0);
+  const duration = Number(video.duration) || 0;
+  if (duration > 30 && safe >= duration - 10) {
+    localStorage.removeItem(RESUME_KEY);
+    paintResume();
+    return;
+  }
+  localStorage.setItem(RESUME_KEY, JSON.stringify({
+    id: video.id,
+    name: video.name,
+    time: Math.round(safe),
+  }));
+  paintResume();
+}
+
+function startAtFor(video, resume) {
+  if (!resume) return 0;
+  const saved = readResume();
+  if (!saved || saved.id !== video.id) return 0;
+  const duration = Number(video.duration) || 0;
+  if (duration > 30 && saved.time >= duration - 10) return 0;
+  return saved.time;
+}
+
+function bindProgress(video, current, started) {
+  playback = { video, current, started };
+  resumeTick = 0;
+}
+
+function rememberNow() {
+  if (!playback || !playback.started()) return;
+  writeResume(playback.video, playback.current());
+}
+
+function maybeRemember() {
+  const now = Date.now();
+  if (now - resumeTick < 5000) return;
+  resumeTick = now;
+  rememberNow();
+}
+
+function paintResume() {
+  const saved = readResume();
+  if (!saved || readRoute().watchId) {
+    resumeEl.hidden = true;
+    resumeEl.replaceChildren();
+    return;
+  }
+  const text = document.createElement("span");
+  text.textContent = `${saved.name} · ${formatDuration(saved.time)}`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Продолжить";
+  button.addEventListener("click", () => showWatch(saved.id, { autoplay: true }));
+  resumeEl.replaceChildren(text, button);
+  resumeEl.hidden = false;
 }
 
 function renderCrumbs(folder) {
@@ -329,7 +404,7 @@ function metaText(video) {
   return bits.join(" · ");
 }
 
-function mountRemux(video, { autoplay = false, previous = null, next = null } = {}) {
+function mountRemux(video, { autoplay = false, previous = null, next = null, startAt = 0 } = {}) {
   const node = document.createElement("video");
   node.playsInline = true;
   node.preload = "auto";
@@ -346,17 +421,25 @@ function mountRemux(video, { autoplay = false, previous = null, next = null } = 
   slider.min = "0";
   slider.step = "1";
   const duration = video.duration || 0;
+  const begin = duration ? Math.min(duration, startAt) : startAt;
   slider.max = String(Math.max(0, Math.floor(duration)));
-  slider.value = "0";
+  slider.value = String(Math.floor(begin));
   slider.disabled = !duration;
+  time.textContent = `${formatDuration(begin)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
   let offset = 0;
+  let position = begin;
   let audio = 0;
+  let playing = false;
+  bindProgress(video, () => position, () => playing);
 
   function start(at) {
     offset = at;
+    position = at;
+    playing = true;
     node.src = `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
     node.play().catch(() => {});
     play.textContent = "Пауза";
+    rememberNow();
   }
 
   play.addEventListener("click", () => {
@@ -374,9 +457,13 @@ function mountRemux(video, { autoplay = false, previous = null, next = null } = 
   });
   node.addEventListener("timeupdate", () => {
     const current = offset + (node.currentTime || 0);
+    position = current;
     if (duration) slider.value = String(Math.min(duration, current));
     time.textContent = `${formatDuration(current)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
+    maybeRemember();
   });
+  node.addEventListener("pause", rememberNow);
+  node.addEventListener("seeked", rememberNow);
   node.addEventListener("ended", () => {
     play.textContent = "Смотреть";
     playNext(video);
@@ -402,7 +489,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null } = 
   controls.append(fullscreen);
   stage.append(node, controls);
   playerEl.append(stage);
-  if (autoplay) start(0);
+  if (autoplay) start(begin);
 }
 
 function audioSelect(video, onChange) {
@@ -451,7 +538,7 @@ function bindFullscreen(stage, video, button) {
   document.addEventListener("webkitfullscreenchange", change);
 }
 
-async function renderPlayer(id, { autoplay = false } = {}) {
+async function renderPlayer(id, { autoplay = false, resume = true } = {}) {
   const gen = renderGen;
   let video;
   try {
@@ -501,14 +588,29 @@ async function renderPlayer(id, { autoplay = false } = {}) {
     node.playsInline = true;
     node.preload = "metadata";
     applySavedVolume(node);
+    const startAt = startAtFor(video, resume);
+    let playing = false;
+    bindProgress(video, () => node.currentTime || 0, () => playing);
+    node.addEventListener("play", () => {
+      playing = true;
+      rememberNow();
+    });
+    node.addEventListener("loadedmetadata", () => {
+      if (startAt > 0) {
+        const limit = Number.isFinite(node.duration) ? Math.max(0, node.duration - 1) : startAt;
+        node.currentTime = Math.min(startAt, limit);
+      }
+      if (autoplay) node.play().catch(() => {});
+    });
+    node.addEventListener("timeupdate", maybeRemember);
+    node.addEventListener("pause", rememberNow);
+    node.addEventListener("seeked", rememberNow);
     node.src = `/api/videos/${video.id}/stream`;
-    node.autoplay = autoplay;
     node.addEventListener("ended", () => playNext(video));
     node.addEventListener("error", () => {
       playerEl.append(note("Браузер не смог воспроизвести этот файл."));
     });
     playerEl.append(node);
-    if (autoplay) node.play().catch(() => {});
     return;
   }
   const previousFull = stepButton("Предыдущее", video, -1);
@@ -519,23 +621,32 @@ async function renderPlayer(id, { autoplay = false } = {}) {
   next.fullscreenTwin = nextFull;
   previousFull.disabled = previous.disabled;
   nextFull.disabled = next.disabled;
-  mountRemux(video, { autoplay, previous: previousFull, next: nextFull });
+  mountRemux(video, {
+    autoplay,
+    previous: previousFull,
+    next: nextFull,
+    startAt: startAtFor(video, resume),
+  });
 }
 
-async function render({ autoplay = false } = {}) {
+async function render({ autoplay = false, resume = true } = {}) {
   const gen = ++renderGen;
+  rememberNow();
+  playback = null;
   const route = readRoute();
   searchEl.value = route.q || "";
   if (route.watchId) {
     listingEl.hidden = true;
     crumbsEl.hidden = true;
     playerEl.hidden = false;
-    await renderPlayer(route.watchId, { autoplay });
+    resumeEl.hidden = true;
+    await renderPlayer(route.watchId, { autoplay, resume });
     return;
   }
   playerEl.hidden = true;
   playerEl.replaceChildren();
   listingEl.hidden = false;
+  paintResume();
   if (gen !== renderGen) return;
   await renderListing(route.folder, route.q);
 }
@@ -580,6 +691,10 @@ rescanBtn.addEventListener("click", async () => {
   rescanBtn.disabled = lastScanning;
 });
 
+window.addEventListener("pagehide", rememberNow);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") rememberNow();
+});
 window.addEventListener("popstate", () => render());
 render();
 refreshStatus();

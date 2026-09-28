@@ -63,6 +63,24 @@ h2 {
 
 .status { min-height: 1.4em; margin: 0.55rem 0 0.7rem; }
 
+.resume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.8rem;
+  margin: -0.2rem 0 0.8rem;
+}
+
+.resume span { overflow-wrap: anywhere; }
+
+.resume button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+}
+
 #search {
   width: 100%;
   border: 0;
@@ -144,7 +162,7 @@ h2 {
 
 .row:hover .name, .crumbs button:hover, .back:hover { color: var(--accent); }
 
-.row:focus-visible, #rescan:focus-visible, #search:focus-visible, .back:focus-visible, .controls button:focus-visible {
+.row:focus-visible, #rescan:focus-visible, #search:focus-visible, .back:focus-visible, .controls button:focus-visible, .resume button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
