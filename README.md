@@ -20,7 +20,7 @@ Python, FastAPI, SQLite и ffmpeg. Архив только читается, ф�
 
 ## Запуск на Mac
 
-Нужны Python 3.12 с python.org, а также `ffmpeg` и `ffprobe` в `PATH`. Сервер запускается из папки проекта:
+Нужны Python 3.12 с python.org, а также `ffmpeg` и `ffprobe` в `PATH`. Их ставит двойной щелчок по файлу `Установить ffmpeg.command` в папке проекта. Если macOS не открывает его сразу, нажмите правой кнопкой и выберите «Открыть». Сервер запускается из папки проекта:
 
 ```bash
 python3 -m venv .venv
