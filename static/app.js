@@ -28,6 +28,28 @@ function showWatch(id) {
   render();
 }
 
+async function playNext(video) {
+  const gen = renderGen;
+  const stayFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  let data;
+  try {
+    data = await api(`/api/browse?path=${encodeURIComponent(video.folder)}`);
+  } catch (_error) {
+    return;
+  }
+  if (gen !== renderGen) return;
+  const files = (data.files || []).filter((file) => file.available && file.playback !== "none");
+  const index = files.findIndex((file) => file.id === video.id);
+  const next = index >= 0 ? files[index + 1] : null;
+  if (!next) return;
+  history.pushState({}, "", `/watch/${next.id}`);
+  await render({ autoplay: true });
+  if (!stayFullscreen || renderGen !== gen + 1) return;
+  const stage = playerEl.querySelector(".stage") || playerEl.querySelector("video");
+  const enter = stage && (stage.requestFullscreen || stage.webkitRequestFullscreen);
+  if (enter) enter.call(stage).catch(() => {});
+}
+
 async function api(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -218,7 +240,7 @@ function metaText(video) {
   return bits.join(" · ");
 }
 
-function mountRemux(video) {
+function mountRemux(video, { autoplay = false } = {}) {
   const node = document.createElement("video");
   node.playsInline = true;
   node.preload = "auto";
@@ -267,6 +289,7 @@ function mountRemux(video) {
   });
   node.addEventListener("ended", () => {
     play.textContent = "Смотреть";
+    playNext(video);
   });
   node.addEventListener("error", () => {
     playerEl.append(note("Не удалось начать воспроизведение. Подождите несколько секунд и нажмите «Смотреть» ещё раз."));
@@ -287,6 +310,7 @@ function mountRemux(video) {
   controls.append(fullscreen);
   stage.append(node, controls);
   playerEl.append(stage);
+  if (autoplay) start(0);
 }
 
 function audioSelect(video, onChange) {
@@ -335,7 +359,7 @@ function bindFullscreen(stage, video, button) {
   document.addEventListener("webkitfullscreenchange", change);
 }
 
-async function renderPlayer(id) {
+async function renderPlayer(id, { autoplay = false } = {}) {
   const gen = renderGen;
   let video;
   try {
@@ -372,16 +396,19 @@ async function renderPlayer(id) {
     node.playsInline = true;
     node.preload = "metadata";
     node.src = `/api/videos/${video.id}/stream`;
+    node.autoplay = autoplay;
+    node.addEventListener("ended", () => playNext(video));
     node.addEventListener("error", () => {
       playerEl.append(note("Браузер не смог воспроизвести этот файл."));
     });
     playerEl.append(node);
+    if (autoplay) node.play().catch(() => {});
     return;
   }
-  mountRemux(video);
+  mountRemux(video, { autoplay });
 }
 
-async function render() {
+async function render({ autoplay = false } = {}) {
   const gen = ++renderGen;
   const route = readRoute();
   searchEl.value = route.q || "";
@@ -389,7 +416,7 @@ async function render() {
     listingEl.hidden = true;
     crumbsEl.hidden = true;
     playerEl.hidden = false;
-    await renderPlayer(route.watchId);
+    await renderPlayer(route.watchId, { autoplay });
     return;
   }
   playerEl.hidden = true;
