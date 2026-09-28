@@ -224,7 +224,7 @@ def test_playback_routes(tmp_path: Path):
         remux = client.get(f"/api/videos/{files['film.mkv']['id']}/stream")
         assert remux.status_code == 503
         avi = client.get(f"/api/videos/{files['old.avi']['id']}/stream")
-        assert avi.status_code == 415
+        assert avi.status_code == 503
         started = client.post("/api/scan")
         assert started.status_code == 202
 
@@ -232,7 +232,7 @@ def test_playback_routes(tmp_path: Path):
 def test_playback_helpers():
     assert playback_kind("mp4") == "direct"
     assert playback_kind("mkv") == "remux"
-    assert playback_kind("avi") == "none"
+    assert playback_kind("avi") == "remux"
     command = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 12.5)
     assert command[command.index("-ss") + 1] == "12.500"
     assert "libx264" in command

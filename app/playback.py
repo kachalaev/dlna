@@ -7,14 +7,14 @@ from pathlib import Path
 def playback_kind(ext: str) -> str:
     if ext == "mp4":
         return "direct"
-    if ext == "mkv":
+    if ext in {"mkv", "avi"}:
         return "remux"
     return "none"
 
 
 def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "libx264") -> list[str]:
-    # Исходники в архиве — MKV HEVC с AC3. Браузер это не играет, поэтому
-    # на выдаче картинка приводится к H.264 до 1080p, а звук к AAC.
+    # MKV и AVI браузер сам не играет. На выдаче картинка приводится к H.264
+    # до 1080p, а звук к AAC. Исходный файл на диске не меняется.
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
     if start > 0:
         command += ["-ss", f"{start:.3f}"]

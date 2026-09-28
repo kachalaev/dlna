@@ -144,9 +144,20 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         ffmpeg = config.ffmpeg
         if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
             raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
-        encoder = await asyncio.to_thread(_choose_encoder, ffmpeg)
-        command = ffmpeg_remux_command(ffmpeg, str(media), t, encoder)
-        return StreamingResponse(_ffmpeg_chunks(command), media_type="video/mp4", headers={"Cache-Control": "no-store"})
+        encoder = await _call(_choose_encoder, ffmpeg)
+        process, first, stderr = await _start_ffmpeg(ffmpeg_remux_command(ffmpeg, str(media), t, encoder))
+        if process is None and encoder == "h264_videotoolbox":
+            logger.warning("Аппаратный кодировщик не начал файл, повтор через libx264")
+            process, first, stderr = await _start_ffmpeg(
+                ffmpeg_remux_command(ffmpeg, str(media), t, "libx264")
+            )
+        if process is None or not first:
+            raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
+        return StreamingResponse(
+            _ffmpeg_chunks(process, first, stderr),
+            media_type="video/mp4",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/")
     def index() -> FileResponse:
@@ -178,32 +189,52 @@ def _choose_encoder(ffmpeg: str) -> str:
     return _video_encoder
 
 
-async def _ffmpeg_chunks(command: list[str]):
-    process = await asyncio.to_thread(
-        subprocess.Popen,
+async def _call(func, *args):
+    # asyncio.to_thread есть только с Python 3.9, на Mac стоит 3.8.
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, func, *args)
+
+
+def _popen_ffmpeg(command: list[str]) -> subprocess.Popen:
+    return subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
     )
 
-    async def drain_error() -> None:
-        if process.stderr is None:
-            return
-        error = await asyncio.to_thread(process.stderr.read)
-        if error:
-            logger.error("ffmpeg: %s", error.decode("utf-8", "replace")[-2000:])
 
-    error_task = asyncio.create_task(drain_error())
+async def _start_ffmpeg(command: list[str]):
+    process = await _call(_popen_ffmpeg, command)
+    assert process.stdout is not None and process.stderr is not None
+    loop = asyncio.get_running_loop()
+    stderr = loop.run_in_executor(None, process.stderr.read)
+    first = await _call(process.stdout.read, 64 * 1024)
+    if first:
+        return process, first, stderr
+    error = await stderr
+    if process.poll() is None:
+        process.kill()
+    await _call(process.wait)
+    if error:
+        logger.error("ffmpeg: %s", error.decode("utf-8", "replace")[-2000:])
+    return None, b"", None
+
+
+async def _ffmpeg_chunks(process: subprocess.Popen, first: bytes, stderr):
     try:
+        yield first
         assert process.stdout is not None
         while True:
-            chunk = await asyncio.to_thread(process.stdout.read, 256 * 1024)
+            chunk = await _call(process.stdout.read, 256 * 1024)
             if not chunk:
                 break
             yield chunk
     finally:
         if process.poll() is None:
             process.kill()
-        await asyncio.to_thread(process.wait)
-        await error_task
+        await _call(process.wait)
+        if stderr is not None:
+            error = await stderr
+            if error:
+                logger.error("ffmpeg: %s", error.decode("utf-8", "replace")[-2000:])
