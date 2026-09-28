@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 import uuid
 from pathlib import Path
 
@@ -13,6 +14,42 @@ logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = frozenset({"mp4", "mkv", "avi"})
 _DISK_ERRNOS = frozenset({5, 6, 19, 60})
+# Служебные папки Windows на exFAT. В них нет фильмов, а чтение даёт ошибку доступа.
+_SKIP_DIRS = frozenset({"system volume information", "$recycle.bin", "recycler"})
+
+
+def _walk_videos(root: Path, onerror) -> list[tuple[Path, os.stat_result]]:
+    # os.walk на macOS использует getattrlistbulk. На USB exFAT этот вызов
+    # часто отвечает EPERM, хотя обычный listdir каталог читает.
+    found: list[tuple[Path, os.stat_result]] = []
+    pending_dirs = [root]
+    while pending_dirs:
+        current = pending_dirs.pop()
+        try:
+            names = os.listdir(current)
+        except OSError as err:
+            onerror(err)
+            continue
+        for name in names:
+            if name.startswith(".") or name.casefold() in _SKIP_DIRS:
+                continue
+            full = current / name
+            try:
+                info = os.lstat(full)
+            except OSError as err:
+                onerror(err)
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                pending_dirs.append(full)
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            if full.suffix.lower().lstrip(".") not in VIDEO_EXTENSIONS:
+                continue
+            found.append((full, info))
+    return found
 
 
 def _problem_message(errors: list[OSError]) -> str:
@@ -67,36 +104,25 @@ class Scanner:
             errors.append(err)
             logger.warning("Не удалось прочитать папку: %s", err)
 
-        for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
-            dirnames[:] = [name for name in dirnames if not name.startswith(".")]
-            for filename in filenames:
-                if filename.startswith("."):
-                    continue
-                ext = Path(filename).suffix.lower().lstrip(".")
-                if ext not in VIDEO_EXTENSIONS:
-                    continue
-                full = Path(dirpath) / filename
-                try:
-                    rel_path = full.relative_to(root).as_posix()
-                    stat = full.stat()
-                except (OSError, ValueError) as err:
-                    if isinstance(err, OSError):
-                        errors.append(err)
-                    continue
-                video_id, needs_probe = self.catalog.upsert_video(
-                    volume_name=volume.name,
-                    abs_path=str(full),
-                    rel_path=rel_path,
-                    name=full.name,
-                    ext=ext,
-                    size=stat.st_size,
-                    mtime_ns=stat.st_mtime_ns,
-                    scan_token=token,
-                )
-                self._files_seen += 1
-                self.catalog.set_files_seen(self._files_seen)
-                if needs_probe:
-                    pending.append((video_id, full))
+        for full, info in _walk_videos(root, onerror):
+            try:
+                rel_path = full.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            video_id, needs_probe = self.catalog.upsert_video(
+                volume_name=volume.name,
+                abs_path=str(full),
+                rel_path=rel_path,
+                name=full.name,
+                ext=full.suffix.lower().lstrip("."),
+                size=info.st_size,
+                mtime_ns=info.st_mtime_ns,
+                scan_token=token,
+            )
+            self._files_seen += 1
+            self.catalog.set_files_seen(self._files_seen)
+            if needs_probe:
+                pending.append((video_id, full))
 
         if errors:
             message = _problem_message(errors)

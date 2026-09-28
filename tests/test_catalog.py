@@ -139,18 +139,27 @@ def test_offline_volume_keeps_files_and_rescan_picks_up_changes(tmp_path: Path):
     assert len(calls) == 3
 
 
+def test_exfat_windows_folders_are_skipped(tmp_path: Path):
+    root = tmp_path / "lib2"
+    touch(root / "System Volume Information" / "hidden.mp4")
+    touch(root / "Films" / "a.mkv")
+    app = make_app(tmp_path, [Volume("lib2", str(root))])
+    app.state.scanner.scan()
+    with TestClient(app) as client:
+        listing = client.get("/api/browse").json()
+        assert [item["name"] for item in listing["folders"]] == ["Films"]
+        assert client.get("/api/status").json()["error"] is None
+
+
 def test_permission_error_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = tmp_path / "lib2"
     touch(root / "a.mp4")
     app = make_app(tmp_path, [Volume("lib2", str(root))])
 
-    def blocked_walk(*args, **kwargs):
-        onerror = kwargs.get("onerror")
-        if onerror:
-            onerror(PermissionError(13, "Permission denied"))
-        return iter(())
+    def blocked_list(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
 
-    monkeypatch.setattr("app.scanner.os.walk", blocked_walk)
+    monkeypatch.setattr("app.scanner.os.listdir", blocked_list)
     app.state.scanner.scan()
     with TestClient(app) as client:
         assert client.get("/api/status").json()["error"] == "Нет доступа к архиву"
@@ -163,13 +172,10 @@ def test_walk_error_does_not_drop_known_files(tmp_path: Path, monkeypatch: pytes
     app = make_app(tmp_path, [Volume("lib2", str(root))])
     app.state.scanner.scan()
 
-    def broken_walk(*args, **kwargs):
-        onerror = kwargs.get("onerror")
-        if onerror:
-            onerror(OSError("denied"))
-        return iter(())
+    def broken_list(*_args, **_kwargs):
+        raise OSError("denied")
 
-    monkeypatch.setattr("app.scanner.os.walk", broken_walk)
+    monkeypatch.setattr("app.scanner.os.listdir", broken_list)
     app.state.scanner.scan()
     with TestClient(app) as client:
         listing = client.get("/api/browse", params={"path": "Фильмы"}).json()
