@@ -58,6 +58,7 @@ class Catalog:
                 );
                 INSERT OR IGNORE INTO scan_status (id, scanning, files_seen)
                 VALUES (1, 0, 0);
+                UPDATE scan_status SET scanning = 0 WHERE id = 1;
                 """
             )
             self._conn.commit()

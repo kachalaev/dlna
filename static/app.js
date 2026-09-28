@@ -359,12 +359,24 @@ document.querySelector("#search-form").addEventListener("submit", (event) => {
 
 rescanBtn.addEventListener("click", async () => {
   rescanBtn.disabled = true;
+  statusEl.textContent = "Идёт обновление каталога";
   try {
     await api("/api/scan", { method: "POST" });
+    const startedAt = Date.now();
+    let status = await api("/api/status");
+    while (status.scanning && Date.now() - startedAt < 10 * 60 * 1000) {
+      statusEl.textContent = statusText(status);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      status = await api("/api/status");
+    }
+    lastScanning = Boolean(status.scanning);
+    statusEl.textContent = statusText(status);
+    if (!readRoute().watchId) await render();
   } catch (_error) {
     statusEl.textContent = "Не удалось запустить обновление";
+    lastScanning = false;
   }
-  refreshStatus();
+  rescanBtn.disabled = lastScanning;
 });
 
 window.addEventListener("popstate", () => render());

@@ -35,6 +35,7 @@ class ScanCoordinator:
     def try_start(self) -> bool:
         if not self._lock.acquire(blocking=False):
             return False
+        self._scanner.catalog.mark_scan_started()
 
         def run() -> None:
             try:
@@ -149,11 +150,11 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/watch/{video_id}")
     def watch_page(video_id: int) -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
