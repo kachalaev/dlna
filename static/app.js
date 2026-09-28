@@ -92,7 +92,7 @@ function statusText(status) {
   if (status.scanning) {
     return status.files_seen
       ? `Идёт обновление каталога, уже ${status.files_seen}`
-      : "Идёт обновление каталога";
+      : "Идёт обновление каталога, смотрю папки";
   }
   const parts = [];
   if (status.finished_at) {

@@ -27,35 +27,34 @@ class Scanner:
         try:
             self.catalog.retire_volumes({volume.name for volume in self.volumes})
             had_error = False
+            pending: list[tuple[int, Path]] = []
             for volume in self.volumes:
-                had_error = self._scan_volume(volume) or had_error
+                error, found = self._scan_volume(volume)
+                had_error = error or had_error
+                pending.extend(found)
             message = "Некоторые папки не удалось прочитать" if had_error else None
             self.catalog.mark_scan_finished(self._files_seen, message)
+            for video_id, path in pending:
+                self.catalog.save_probe(video_id, self._probe_safe(path))
         except Exception:
             logger.exception("Сканирование прервано")
             self.catalog.mark_scan_finished(self._files_seen, "Не удалось обновить каталог")
 
-    def _scan_volume(self, volume: Volume) -> bool:
+    def _scan_volume(self, volume: Volume) -> tuple[bool, list[tuple[int, Path]]]:
         root = Path(volume.path)
         if not root.is_dir():
             # Отключённый том не трогаем: уже известные файлы остаются в общем дереве.
             self.catalog.set_volume_state(volume.name, volume.path, False, None)
             logger.info("Том %s не подключён, каталог по нему сохранён", volume.name)
-            return False
+            return False, []
 
         token = uuid.uuid4().hex
         errors: list[OSError] = []
+        pending: list[tuple[int, Path]] = []
 
         def onerror(err: OSError) -> None:
             errors.append(err)
             logger.warning("Не удалось прочитать папку: %s", err)
-
-        try:
-            root_resolved = root.resolve()
-        except OSError as err:
-            errors.append(err)
-            self.catalog.set_volume_state(volume.name, volume.path, True, "Некоторые папки не удалось прочитать")
-            return True
 
         for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
             dirnames[:] = [name for name in dirnames if not name.startswith(".")]
@@ -67,8 +66,7 @@ class Scanner:
                     continue
                 full = Path(dirpath) / filename
                 try:
-                    resolved = full.resolve()
-                    rel_path = resolved.relative_to(root_resolved).as_posix()
+                    rel_path = full.relative_to(root).as_posix()
                     stat = full.stat()
                 except (OSError, ValueError) as err:
                     if isinstance(err, OSError):
@@ -76,28 +74,28 @@ class Scanner:
                     continue
                 video_id, needs_probe = self.catalog.upsert_video(
                     volume_name=volume.name,
-                    abs_path=str(resolved),
+                    abs_path=str(full),
                     rel_path=rel_path,
-                    name=resolved.name,
+                    name=full.name,
                     ext=ext,
                     size=stat.st_size,
                     mtime_ns=stat.st_mtime_ns,
                     scan_token=token,
                 )
-                if needs_probe:
-                    self.catalog.save_probe(video_id, self._probe_safe(resolved))
                 self._files_seen += 1
                 self.catalog.set_files_seen(self._files_seen)
+                if needs_probe:
+                    pending.append((video_id, full))
 
         if errors:
             self.catalog.set_volume_state(
                 volume.name, volume.path, True, "Некоторые папки не удалось прочитать"
             )
-            return True
+            return True, pending
 
         self.catalog.prune_volume(volume.name, token)
         self.catalog.set_volume_state(volume.name, volume.path, True, None)
-        return False
+        return False, pending
 
     def _probe_safe(self, path: Path) -> dict:
         try:

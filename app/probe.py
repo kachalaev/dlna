@@ -25,6 +25,10 @@ def probe_file(path: str, ffprobe: str) -> dict:
         ffprobe,
         "-v",
         "error",
+        "-probesize",
+        "5000000",
+        "-analyzeduration",
+        "5000000",
         "-show_entries",
         "format=duration:stream=codec_type,codec_name,width,height",
         "-of",
@@ -35,7 +39,7 @@ def probe_file(path: str, ffprobe: str) -> dict:
         completed = subprocess.run(
             command,
             capture_output=True,
-            timeout=120,
+            timeout=20,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
