@@ -23,7 +23,6 @@ from app.scanner import Scanner
 logger = logging.getLogger(__name__)
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-_video_encoder: str | None = None
 STATIC_DIR = PACKAGE_ROOT / "static"
 
 
@@ -144,13 +143,7 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         ffmpeg = config.ffmpeg
         if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
             raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
-        encoder = await _call(_choose_encoder, ffmpeg)
-        process, first, stderr = await _start_ffmpeg(ffmpeg_remux_command(ffmpeg, str(media), t, encoder))
-        if process is None and encoder == "h264_videotoolbox":
-            logger.warning("Аппаратный кодировщик не начал файл, повтор через libx264")
-            process, first, stderr = await _start_ffmpeg(
-                ffmpeg_remux_command(ffmpeg, str(media), t, "libx264")
-            )
+        process, first, stderr = await _start_ffmpeg(ffmpeg_remux_command(ffmpeg, str(media), t, "libx264"))
         if process is None or not first:
             raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
         return StreamingResponse(
@@ -169,24 +162,6 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
-
-
-def _choose_encoder(ffmpeg: str) -> str:
-    global _video_encoder
-    if _video_encoder:
-        return _video_encoder
-    try:
-        completed = subprocess.run(
-            [ffmpeg, "-hide_banner", "-encoders"],
-            capture_output=True,
-            timeout=15,
-            check=False,
-        )
-        text = completed.stdout.decode("utf-8", "replace")
-    except (OSError, subprocess.TimeoutExpired):
-        text = ""
-    _video_encoder = "h264_videotoolbox" if "h264_videotoolbox" in text else "libx264"
-    return _video_encoder
 
 
 async def _call(func, *args):
