@@ -26,7 +26,18 @@ if [[ ! -f "$root/config.yaml" ]]; then
 fi
 
 chmod 755 "$root/scripts/run-server.sh"
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+support="$HOME/Library/Application Support/dlna"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs" "$support"
+
+# Фоновый launchd не получает доступ к USB exFAT. Запуск из Terminal
+# идёт с тем же доступом, что и обычная работа за этим Mac.
+launcher="$support/start.applescript"
+shell_cmd="export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:\$PATH; nohup $(printf '%q' "$root/scripts/run-server.sh") >> $(printf '%q' "$HOME/Library/Logs/dlna.log") 2>&1 & disown; exit"
+cat > "$launcher" <<EOF
+tell application "Terminal"
+  do script "${shell_cmd}"
+end tell
+EOF
 
 cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -37,24 +48,13 @@ cat > "$plist" <<EOF
   <string>${label}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${root}/scripts/run-server.sh</string>
+    <string>/usr/bin/osascript</string>
+    <string>${launcher}</string>
   </array>
-  <key>WorkingDirectory</key>
-  <string>${root}</string>
   <key>RunAtLoad</key>
   <true/>
-  <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
   <key>StandardOutPath</key>
   <string>${HOME}/Library/Logs/dlna.log</string>
   <key>StandardErrorPath</key>
@@ -77,5 +77,7 @@ launchctl enable "gui/${uid}/${label}"
 launchctl kickstart -k "gui/${uid}/${label}"
 
 echo "Готово. Сайт запускается сам после входа в учётную запись Mac."
+echo "Если система спросит разрешение управлять Terminal, нажмите OK."
+echo "Окно Terminal можно закрыть: сайт останется запущенным."
 echo "Сейчас он тоже должен открываться: http://127.0.0.1:8080"
 echo "Журнал: $HOME/Library/Logs/dlna.log"
