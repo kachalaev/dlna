@@ -196,7 +196,8 @@ def test_playback_helpers():
     assert playback_kind("avi") == "none"
     command = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 12.5)
     assert command[command.index("-ss") + 1] == "12.500"
-    assert "copy" in command
+    assert "libx264" in command
+    assert "aac" in command
     assert command[-1] == "pipe:1"
     still = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0)
     assert "-ss" not in still

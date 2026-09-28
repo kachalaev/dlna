@@ -23,6 +23,7 @@ from app.scanner import Scanner
 logger = logging.getLogger(__name__)
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+_video_encoder: str | None = None
 STATIC_DIR = PACKAGE_ROOT / "static"
 
 
@@ -142,7 +143,8 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         ffmpeg = config.ffmpeg
         if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
             raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
-        command = ffmpeg_remux_command(ffmpeg, str(media), t)
+        encoder = await asyncio.to_thread(_choose_encoder, ffmpeg)
+        command = ffmpeg_remux_command(ffmpeg, str(media), t, encoder)
         return StreamingResponse(_ffmpeg_chunks(command), media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
     @app.get("/")
@@ -157,14 +159,41 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
     return app
 
 
+def _choose_encoder(ffmpeg: str) -> str:
+    global _video_encoder
+    if _video_encoder:
+        return _video_encoder
+    try:
+        completed = subprocess.run(
+            [ffmpeg, "-hide_banner", "-encoders"],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        text = completed.stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired):
+        text = ""
+    _video_encoder = "h264_videotoolbox" if "h264_videotoolbox" in text else "libx264"
+    return _video_encoder
+
+
 async def _ffmpeg_chunks(command: list[str]):
     process = await asyncio.to_thread(
         subprocess.Popen,
         command,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         stdin=subprocess.DEVNULL,
     )
+
+    async def drain_error() -> None:
+        if process.stderr is None:
+            return
+        error = await asyncio.to_thread(process.stderr.read)
+        if error:
+            logger.error("ffmpeg: %s", error.decode("utf-8", "replace")[-2000:])
+
+    error_task = asyncio.create_task(drain_error())
     try:
         assert process.stdout is not None
         while True:
@@ -176,3 +205,4 @@ async def _ffmpeg_chunks(command: list[str]):
         if process.poll() is None:
             process.kill()
         await asyncio.to_thread(process.wait)
+        await error_task

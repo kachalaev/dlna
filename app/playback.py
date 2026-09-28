@@ -12,7 +12,9 @@ def playback_kind(ext: str) -> str:
     return "none"
 
 
-def ffmpeg_remux_command(ffmpeg: str, path: str, start: float) -> list[str]:
+def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "libx264") -> list[str]:
+    # Исходники в архиве — MKV HEVC с AC3. Браузер это не играет, поэтому
+    # на выдаче картинка приводится к H.264 до 1080p, а звук к AAC.
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
     if start > 0:
         command += ["-ss", f"{start:.3f}"]
@@ -23,8 +25,22 @@ def ffmpeg_remux_command(ffmpeg: str, path: str, start: float) -> list[str]:
         "0:v:0",
         "-map",
         "0:a:0?",
-        "-c",
-        "copy",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale=-2:min(1080\\,ih)",
+    ]
+    if encoder == "h264_videotoolbox":
+        command += ["-c:v", "h264_videotoolbox", "-b:v", "8000k", "-allow_sw", "1", "-pix_fmt", "yuv420p"]
+    else:
+        command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", "48"]
+    command += [
+        "-c:a",
+        "aac",
+        "-ac",
+        "2",
+        "-b:a",
+        "192k",
         "-f",
         "mp4",
         "-movflags",

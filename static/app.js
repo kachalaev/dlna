@@ -268,14 +268,11 @@ function mountRemux(video) {
     play.textContent = "Смотреть";
   });
   node.addEventListener("error", () => {
-    playerEl.append(note("Не удалось воспроизвести файл. Если это повторяется, на сервере нужен ffmpeg."));
+    playerEl.append(note("Не удалось начать воспроизведение. Подождите несколько секунд и нажмите «Смотреть» ещё раз."));
   });
   slider.addEventListener("change", () => start(Number(slider.value) || 0));
   controls.append(play, slider, time);
   playerEl.append(node, controls);
-  if (video.video_codec === "hevc" || video.video_codec === "h265") {
-    playerEl.append(note("Если ролик не стартует, этот браузер не поддерживает кодек HEVC."));
-  }
 }
 
 async function renderPlayer(id) {
