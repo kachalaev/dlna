@@ -41,6 +41,13 @@ class Catalog:
                 );
                 CREATE INDEX IF NOT EXISTS idx_videos_volume ON videos(volume_name);
 
+                CREATE TABLE IF NOT EXISTS directories (
+                    volume_name TEXT NOT NULL,
+                    rel_path TEXT NOT NULL,
+                    scan_token TEXT NOT NULL,
+                    PRIMARY KEY (volume_name, rel_path)
+                );
+
                 CREATE TABLE IF NOT EXISTS volume_state (
                     name TEXT PRIMARY KEY,
                     path TEXT NOT NULL,
@@ -72,11 +79,16 @@ class Catalog:
                     tuple(names),
                 )
                 self._conn.execute(
+                    f"DELETE FROM directories WHERE volume_name NOT IN ({marks})",
+                    tuple(names),
+                )
+                self._conn.execute(
                     f"DELETE FROM volume_state WHERE name NOT IN ({marks})",
                     tuple(names),
                 )
             else:
                 self._conn.execute("DELETE FROM videos")
+                self._conn.execute("DELETE FROM directories")
                 self._conn.execute("DELETE FROM volume_state")
             self._conn.commit()
 
@@ -177,13 +189,36 @@ class Catalog:
             )
             self._conn.commit()
 
+    def upsert_directory(self, volume_name: str, rel_path: str, scan_token: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO directories (volume_name, rel_path, scan_token)
+                VALUES (?, ?, ?)
+                ON CONFLICT(volume_name, rel_path) DO UPDATE SET scan_token = excluded.scan_token
+                """,
+                (volume_name, rel_path, scan_token),
+            )
+            self._conn.commit()
+
     def prune_volume(self, volume_name: str, scan_token: str) -> None:
         with self._lock:
             self._conn.execute(
                 "DELETE FROM videos WHERE volume_name = ? AND scan_token != ?",
                 (volume_name, scan_token),
             )
+            self._conn.execute(
+                "DELETE FROM directories WHERE volume_name = ? AND scan_token != ?",
+                (volume_name, scan_token),
+            )
             self._conn.commit()
+
+    def list_directories(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT volume_name, rel_path FROM directories"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_videos(self) -> list[dict]:
         with self._lock:

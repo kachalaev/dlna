@@ -18,10 +18,11 @@ _DISK_ERRNOS = frozenset({5, 6, 19, 60})
 _SKIP_DIRS = frozenset({"system volume information", "$recycle.bin", "recycler"})
 
 
-def _walk_videos(root: Path, onerror) -> list[tuple[Path, os.stat_result]]:
+def _walk_tree(root: Path, onerror) -> tuple[list[tuple[Path, os.stat_result]], list[str]]:
     # os.walk на macOS использует getattrlistbulk. На USB exFAT этот вызов
     # часто отвечает EPERM, хотя обычный listdir каталог читает.
     found: list[tuple[Path, os.stat_result]] = []
+    directories: list[str] = []
     pending_dirs = [root]
     while pending_dirs:
         current = pending_dirs.pop()
@@ -36,12 +37,15 @@ def _walk_videos(root: Path, onerror) -> list[tuple[Path, os.stat_result]]:
             full = current / name
             try:
                 info = os.lstat(full)
-            except OSError as err:
-                onerror(err)
+                rel_path = full.relative_to(root).as_posix()
+            except (OSError, ValueError) as err:
+                if isinstance(err, OSError):
+                    onerror(err)
                 continue
             if stat.S_ISLNK(info.st_mode):
                 continue
             if stat.S_ISDIR(info.st_mode):
+                directories.append(rel_path)
                 pending_dirs.append(full)
                 continue
             if not stat.S_ISREG(info.st_mode):
@@ -49,7 +53,7 @@ def _walk_videos(root: Path, onerror) -> list[tuple[Path, os.stat_result]]:
             if full.suffix.lower().lstrip(".") not in VIDEO_EXTENSIONS:
                 continue
             found.append((full, info))
-    return found
+    return found, directories
 
 
 def _problem_message(errors: list[OSError]) -> str:
@@ -104,7 +108,10 @@ class Scanner:
             errors.append(err)
             logger.warning("Не удалось прочитать папку: %s", err)
 
-        for full, info in _walk_videos(root, onerror):
+        files, directories = _walk_tree(root, onerror)
+        for rel_path in directories:
+            self.catalog.upsert_directory(volume.name, rel_path, token)
+        for full, info in files:
             try:
                 rel_path = full.relative_to(root).as_posix()
             except ValueError:

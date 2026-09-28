@@ -102,7 +102,7 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
             folder = normalize_folder(path)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return build_listing(catalog.list_videos(), folder, mounted())
+        return build_listing(catalog.list_videos(), catalog.list_directories(), folder, mounted())
 
     @app.get("/api/search")
     def search(q: str = "") -> dict:

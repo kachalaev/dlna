@@ -35,22 +35,33 @@ def public_video(row: dict, mounted: set[str]) -> dict:
     }
 
 
-def build_listing(rows: list[dict], folder: str, mounted: set[str]) -> dict:
+def build_listing(rows: list[dict], directories: list[dict], folder: str, mounted: set[str]) -> dict:
     prefix = f"{folder}/" if folder else ""
     folders: dict[str, int] = {}
     files: list[dict] = []
-    for row in rows:
-        rel_path = row["rel_path"]
+
+    def consider(rel_path: str) -> str | None:
         if prefix and not rel_path.startswith(prefix):
-            continue
+            return None
         rest = rel_path[len(prefix):]
         if not rest:
+            return None
+        return rest.split("/", 1)[0]
+
+    for row in rows:
+        rel_path = row["rel_path"]
+        child = consider(rel_path)
+        if child is None:
             continue
-        parts = rest.split("/")
-        if len(parts) == 1:
-            files.append(public_video(row, mounted))
+        rest = rel_path[len(prefix):]
+        if "/" in rest:
+            folders[child] = folders.get(child, 0) + 1
         else:
-            folders[parts[0]] = folders.get(parts[0], 0) + 1
+            files.append(public_video(row, mounted))
+    for item in directories:
+        child = consider(item["rel_path"])
+        if child is not None:
+            folders.setdefault(child, 0)
 
     folder_rows = [
         {

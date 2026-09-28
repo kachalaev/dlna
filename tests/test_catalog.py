@@ -139,6 +139,21 @@ def test_offline_volume_keeps_files_and_rescan_picks_up_changes(tmp_path: Path):
     assert len(calls) == 3
 
 
+def test_empty_folder_is_listed(tmp_path: Path):
+    root = tmp_path / "lib2"
+    (root / "Новая папка").mkdir(parents=True)
+    touch(root / "Films" / "a.mp4")
+    app = make_app(tmp_path, [Volume("lib2", str(root))])
+    app.state.scanner.scan()
+    with TestClient(app) as client:
+        listing = client.get("/api/browse").json()
+        assert [item["name"] for item in listing["folders"]] == ["Films", "Новая папка"]
+        assert listing["folders"][1]["count"] == 0
+        nested = client.get("/api/browse", params={"path": "Новая папка"}).json()
+        assert nested["folders"] == []
+        assert nested["files"] == []
+
+
 def test_exfat_windows_folders_are_skipped(tmp_path: Path):
     root = tmp_path / "lib2"
     touch(root / "System Volume Information" / "hidden.mp4")
