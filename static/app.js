@@ -271,8 +271,46 @@ function mountRemux(video) {
     playerEl.append(note("Не удалось начать воспроизведение. Подождите несколько секунд и нажмите «Смотреть» ещё раз."));
   });
   slider.addEventListener("change", () => start(Number(slider.value) || 0));
-  controls.append(play, slider, time);
-  playerEl.append(node, controls);
+  const fullscreen = document.createElement("button");
+  fullscreen.type = "button";
+  fullscreen.textContent = "На весь экран";
+  const stage = document.createElement("div");
+  stage.className = "stage";
+  bindFullscreen(stage, node, fullscreen);
+  controls.append(play, slider, time, fullscreen);
+  stage.append(node, controls);
+  playerEl.append(stage);
+}
+
+function bindFullscreen(stage, video, button) {
+  const change = () => {
+    if (!stage.isConnected) {
+      document.removeEventListener("fullscreenchange", change);
+      document.removeEventListener("webkitfullscreenchange", change);
+      return;
+    }
+    const active = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+    button.textContent = active ? "Обычный размер" : "На весь экран";
+  };
+  button.addEventListener("click", () => {
+    const active = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+    if (active) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+      return;
+    }
+    if (stage.requestFullscreen) {
+      stage.requestFullscreen();
+      return;
+    }
+    if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+    if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
+  });
+  document.addEventListener("fullscreenchange", change);
+  document.addEventListener("webkitfullscreenchange", change);
 }
 
 async function renderPlayer(id) {

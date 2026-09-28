@@ -136,6 +136,31 @@ h2 {
   background: var(--screen);
 }
 
+.stage:fullscreen,
+.stage:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: #000;
+}
+
+.stage:fullscreen video,
+.stage:-webkit-full-screen video {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  object-fit: contain;
+}
+
+.stage:fullscreen .controls,
+.stage:-webkit-full-screen .controls {
+  margin: 0;
+  padding: 0.7rem 1rem 1rem;
+  color: white;
+}
+
 .controls {
   display: flex;
   align-items: center;
