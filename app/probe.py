@@ -15,6 +15,7 @@ EMPTY_PROBE = {
     "height": None,
     "video_codec": None,
     "audio_codec": None,
+    "audio_tracks": [],
 }
 
 
@@ -30,7 +31,7 @@ def probe_file(path: str, ffprobe: str) -> dict:
         "-analyzeduration",
         "5000000",
         "-show_entries",
-        "format=duration:stream=codec_type,codec_name,width,height",
+        "format=duration:stream=codec_type,codec_name,width,height:stream_tags=language,title",
         "-of",
         "json",
         path,
@@ -66,13 +67,24 @@ def parse_probe(payload: dict) -> dict:
     audio_codec = None
     width = None
     height = None
+    audio_tracks: list[dict] = []
     for stream in payload.get("streams") or []:
         if stream.get("codec_type") == "video" and video_codec is None:
             video_codec = stream.get("codec_name")
             width = stream.get("width")
             height = stream.get("height")
-        elif stream.get("codec_type") == "audio" and audio_codec is None:
-            audio_codec = stream.get("codec_name")
+        elif stream.get("codec_type") == "audio":
+            tags = stream.get("tags") or {}
+            if audio_codec is None:
+                audio_codec = stream.get("codec_name")
+            audio_tracks.append(
+                {
+                    "index": len(audio_tracks),
+                    "language": str(tags.get("language") or ""),
+                    "title": str(tags.get("title") or ""),
+                    "codec": str(stream.get("codec_name") or ""),
+                }
+            )
     return {
         "probe_state": "ok",
         "duration": duration,
@@ -80,4 +92,5 @@ def parse_probe(payload: dict) -> dict:
         "height": height,
         "video_codec": video_codec,
         "audio_codec": audio_codec,
+        "audio_tracks": audio_tracks,
     }

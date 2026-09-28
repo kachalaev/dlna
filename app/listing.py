@@ -1,6 +1,38 @@
 from __future__ import annotations
 
+import json
+
 from app.playback import playback_kind
+
+_LANGUAGES = {
+    "ru": "Русский",
+    "rus": "Русский",
+    "en": "Английский",
+    "eng": "Английский",
+    "de": "Немецкий",
+    "deu": "Немецкий",
+    "ger": "Немецкий",
+    "fr": "Французский",
+    "fra": "Французский",
+    "fre": "Французский",
+    "es": "Испанский",
+    "spa": "Испанский",
+    "it": "Итальянский",
+    "ita": "Итальянский",
+    "ja": "Японский",
+    "jpn": "Японский",
+    "zh": "Китайский",
+    "zho": "Китайский",
+    "chi": "Китайский",
+    "ko": "Корейский",
+    "kor": "Корейский",
+    "uk": "Украинский",
+    "ukr": "Украинский",
+    "pl": "Польский",
+    "pol": "Польский",
+    "pt": "Португальский",
+    "por": "Португальский",
+}
 
 
 def normalize_folder(folder: str) -> str:
@@ -12,6 +44,41 @@ def normalize_folder(folder: str) -> str:
             raise ValueError("Некорректный путь")
         parts.append(part)
     return "/".join(parts)
+
+
+def track_label(track: dict, number: int) -> str:
+    language = _LANGUAGES.get(str(track.get("language") or "").lower())
+    title = str(track.get("title") or "").strip()
+    codec = str(track.get("codec") or "").upper()
+    parts: list[str] = []
+    if title:
+        parts.append(title)
+    if language and language.casefold() not in title.casefold():
+        parts.append(language)
+    if not parts:
+        parts.append(f"Дорожка {number}")
+    if codec:
+        parts.append(codec)
+    return " · ".join(parts)
+
+
+def audio_tracks(raw) -> list[dict]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, json.JSONDecodeError):
+        return []
+    tracks = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index") or 0)
+        except (TypeError, ValueError):
+            index = 0
+        tracks.append({"index": index, "label": track_label(item, len(tracks) + 1)})
+    return tracks
 
 
 def public_video(row: dict, mounted: set[str]) -> dict:
@@ -30,6 +97,7 @@ def public_video(row: dict, mounted: set[str]) -> dict:
         "height": row["height"],
         "video_codec": row["video_codec"],
         "audio_codec": row["audio_codec"],
+        "audio_tracks": audio_tracks(row.get("audio_tracks")),
         "available": row["volume_name"] in mounted,
         "playback": playback_kind(row["ext"]),
     }

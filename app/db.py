@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -68,6 +69,9 @@ class Catalog:
                 UPDATE scan_status SET scanning = 0 WHERE id = 1;
                 """
             )
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(videos)")}
+            if "audio_tracks" not in columns:
+                self._conn.execute("ALTER TABLE videos ADD COLUMN audio_tracks TEXT")
             self._conn.commit()
 
     def retire_volumes(self, names: set[str]) -> None:
@@ -121,7 +125,7 @@ class Catalog:
     ) -> tuple[int, bool]:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, size, mtime_ns, probe_state FROM videos WHERE abs_path = ?",
+                "SELECT id, size, mtime_ns, probe_state, audio_tracks FROM videos WHERE abs_path = ?",
                 (abs_path,),
             ).fetchone()
             if (
@@ -139,7 +143,8 @@ class Catalog:
                     (scan_token, rel_path, name, ext, volume_name, row["id"]),
                 )
                 self._conn.commit()
-                return int(row["id"]), False
+                needs_tracks = row["probe_state"] == "ok" and row["audio_tracks"] is None
+                return int(row["id"]), needs_tracks
 
             if row:
                 self._conn.execute(
@@ -174,7 +179,7 @@ class Catalog:
                 """
                 UPDATE videos
                 SET duration = ?, width = ?, height = ?, video_codec = ?, audio_codec = ?,
-                    probe_state = ?
+                    audio_tracks = ?, probe_state = ?
                 WHERE id = ?
                 """,
                 (
@@ -183,6 +188,7 @@ class Catalog:
                     info.get("height"),
                     info.get("video_codec"),
                     info.get("audio_codec"),
+                    json.dumps(info.get("audio_tracks") or [], ensure_ascii=False),
                     info.get("probe_state", "failed"),
                     video_id,
                 ),
@@ -225,7 +231,7 @@ class Catalog:
             rows = self._conn.execute(
                 """
                 SELECT id, volume_name, rel_path, name, ext, size, mtime_ns, duration,
-                       width, height, video_codec, audio_codec
+                       width, height, video_codec, audio_codec, audio_tracks
                 FROM videos
                 """
             ).fetchall()
@@ -236,7 +242,7 @@ class Catalog:
             row = self._conn.execute(
                 """
                 SELECT id, volume_name, abs_path, rel_path, name, ext, size, mtime_ns,
-                       duration, width, height, video_codec, audio_codec
+                       duration, width, height, video_codec, audio_codec, audio_tracks
                 FROM videos WHERE id = ?
                 """,
                 (video_id,),

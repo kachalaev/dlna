@@ -238,10 +238,11 @@ function mountRemux(video) {
   slider.value = "0";
   slider.disabled = !duration;
   let offset = 0;
+  let audio = 0;
 
   function start(at) {
     offset = at;
-    node.src = `/api/videos/${video.id}/stream?t=${at.toFixed(3)}`;
+    node.src = `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
     node.play().catch(() => {});
     play.textContent = "Пауза";
   }
@@ -277,9 +278,30 @@ function mountRemux(video) {
   const stage = document.createElement("div");
   stage.className = "stage";
   bindFullscreen(stage, node, fullscreen);
-  controls.append(play, slider, time, fullscreen);
+  controls.append(play, slider, time);
+  const tracks = audioSelect(video, (index) => {
+    audio = index;
+    if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
+  });
+  if (tracks) controls.append(tracks);
+  controls.append(fullscreen);
   stage.append(node, controls);
   playerEl.append(stage);
+}
+
+function audioSelect(video, onChange) {
+  const tracks = video.audio_tracks || [];
+  if (tracks.length < 2) return null;
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Звуковая дорожка");
+  tracks.forEach((track) => {
+    const option = document.createElement("option");
+    option.value = String(track.index);
+    option.textContent = track.label;
+    select.append(option);
+  });
+  select.addEventListener("change", () => onChange(Number(select.value) || 0));
+  return select;
 }
 
 function bindFullscreen(stage, video, button) {
@@ -344,7 +366,7 @@ async function renderPlayer(id) {
     playerEl.append(note("Файл есть в каталоге. Просмотр AVI в браузере не включён."));
     return;
   }
-  if (video.playback === "direct") {
+  if (video.playback === "direct" && (video.audio_tracks || []).length < 2) {
     const node = document.createElement("video");
     node.controls = true;
     node.playsInline = true;

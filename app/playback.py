@@ -12,7 +12,13 @@ def playback_kind(ext: str) -> str:
     return "none"
 
 
-def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "libx264") -> list[str]:
+def ffmpeg_remux_command(
+    ffmpeg: str,
+    path: str,
+    start: float,
+    encoder: str = "libx264",
+    audio_index: int = 0,
+) -> list[str]:
     # MacBook Pro A1502 не декодирует HEVC аппаратно. VideoToolbox только
     # замедляет. Лёгкий программный H.264 до 720p — самый быстрый вариант.
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
@@ -24,7 +30,7 @@ def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "l
         "-map",
         "0:v:0",
         "-map",
-        "0:a:0?",
+        f"0:a:{audio_index}?",
         "-sn",
         "-dn",
         "-vf",

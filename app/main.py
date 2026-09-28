@@ -8,6 +8,7 @@ import subprocess
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -118,7 +119,7 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         return public_video(row, mounted())
 
     @app.get("/api/videos/{video_id}/stream")
-    async def stream(video_id: int, t: float = Query(0)):
+    async def stream(video_id: int, t: float = Query(0), a: Optional[int] = Query(None)):
         row = catalog.get_video(video_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Файл не найден")
@@ -129,12 +130,13 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         media = Path(row["abs_path"])
         if not path_inside(Path(volume.path), media):
             raise HTTPException(status_code=404, detail="Файл сейчас недоступен")
-        if kind == "direct":
+        if kind == "direct" and a is None:
             return FileResponse(
                 media,
                 media_type="video/mp4",
                 headers={"Cache-Control": "no-store"},
             )
+        audio = 0 if a is None or a < 0 else min(a, 31)
         if not math.isfinite(t) or t < 0:
             t = 0
         duration = row["duration"]
@@ -143,7 +145,9 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         ffmpeg = config.ffmpeg
         if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
             raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
-        process, first, stderr = await _start_ffmpeg(ffmpeg_remux_command(ffmpeg, str(media), t, "libx264"))
+        process, first, stderr = await _start_ffmpeg(
+            ffmpeg_remux_command(ffmpeg, str(media), t, "libx264", audio)
+        )
         if process is None or not first:
             raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
         return StreamingResponse(

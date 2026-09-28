@@ -229,6 +229,27 @@ def test_playback_routes(tmp_path: Path):
         assert started.status_code == 202
 
 
+def test_audio_track_labels(tmp_path: Path):
+    root = tmp_path / "lib2"
+    touch(root / "film.mkv", b"mkv")
+
+    def probe(_path: str) -> dict:
+        info = fake_probe(_path)
+        info["audio_tracks"] = [
+            {"index": 0, "language": "rus", "title": "", "codec": "ac3"},
+            {"index": 1, "language": "eng", "title": "Commentary", "codec": "aac"},
+        ]
+        return info
+
+    app = make_app(tmp_path, [Volume("lib2", str(root))], probe=probe)
+    app.state.scanner.scan()
+    with TestClient(app) as client:
+        file_id = client.get("/api/browse").json()["files"][0]["id"]
+        tracks = client.get(f"/api/videos/{file_id}").json()["audio_tracks"]
+        assert tracks[0]["label"] == "Русский · AC3"
+        assert tracks[1]["label"] == "Commentary · Английский · AAC"
+
+
 def test_playback_helpers():
     assert playback_kind("mp4") == "direct"
     assert playback_kind("mkv") == "remux"
@@ -240,6 +261,20 @@ def test_playback_helpers():
     assert command[-1] == "pipe:1"
     still = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0)
     assert "-ss" not in still
+    chosen = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, audio_index=1)
+    assert "0:a:1?" in chosen
+    info = parse_probe(
+        {
+            "format": {"duration": "3.5"},
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264", "width": 1280, "height": 720},
+                {"codec_type": "audio", "codec_name": "ac3", "tags": {"language": "rus"}},
+                {"codec_type": "audio", "codec_name": "aac", "tags": {"language": "eng", "title": "Commentary"}},
+            ],
+        }
+    )
+    assert [track["index"] for track in info["audio_tracks"]] == [0, 1]
+    assert info["audio_tracks"][1]["language"] == "eng"
     info = parse_probe(
         {
             "format": {"duration": "3.5"},
