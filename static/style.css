@@ -74,7 +74,7 @@ h2 {
 
 #search:focus { border-bottom-color: var(--accent); }
 
-#rescan, .back, .controls button {
+#rescan, .back, .controls button, .neighbors button {
   border: 0;
   background: var(--accent);
   color: white;
@@ -82,7 +82,22 @@ h2 {
   cursor: pointer;
 }
 
-#rescan:disabled { opacity: 0.55; cursor: default; }
+#rescan:disabled, .neighbors button:disabled, .controls button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.neighbors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.controls .step { display: none; }
+
+.stage:fullscreen .controls .step,
+.stage:-webkit-full-screen .controls .step { display: inline-block; }
 
 .back { background: transparent; color: var(--accent); padding: 0; }
 

@@ -28,26 +28,43 @@ function showWatch(id) {
   render();
 }
 
-async function playNext(video) {
+async function playableFiles(video) {
+  const data = await api(`/api/browse?path=${encodeURIComponent(video.folder)}`);
+  return (data.files || []).filter((file) => file.available && file.playback !== "none");
+}
+
+async function openSibling(video, step) {
   const gen = renderGen;
   const stayFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-  let data;
+  let files;
   try {
-    data = await api(`/api/browse?path=${encodeURIComponent(video.folder)}`);
+    files = await playableFiles(video);
   } catch (_error) {
     return;
   }
   if (gen !== renderGen) return;
-  const files = (data.files || []).filter((file) => file.available && file.playback !== "none");
   const index = files.findIndex((file) => file.id === video.id);
-  const next = index >= 0 ? files[index + 1] : null;
-  if (!next) return;
-  history.pushState({}, "", `/watch/${next.id}`);
+  const target = index >= 0 ? files[index + step] : null;
+  if (!target) return;
+  history.pushState({}, "", `/watch/${target.id}`);
   await render({ autoplay: true });
   if (!stayFullscreen || renderGen !== gen + 1) return;
   const stage = playerEl.querySelector(".stage") || playerEl.querySelector("video");
   const enter = stage && (stage.requestFullscreen || stage.webkitRequestFullscreen);
   if (enter) enter.call(stage).catch(() => {});
+}
+
+function playNext(video) {
+  return openSibling(video, 1);
+}
+
+function stepButton(label, video, step) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.disabled = true;
+  button.addEventListener("click", () => openSibling(video, step));
+  return button;
 }
 
 async function api(url, options) {
@@ -240,7 +257,7 @@ function metaText(video) {
   return bits.join(" · ");
 }
 
-function mountRemux(video, { autoplay = false } = {}) {
+function mountRemux(video, { autoplay = false, previous = null, next = null } = {}) {
   const node = document.createElement("video");
   node.playsInline = true;
   node.preload = "auto";
@@ -302,6 +319,8 @@ function mountRemux(video, { autoplay = false } = {}) {
   stage.className = "stage";
   bindFullscreen(stage, node, fullscreen);
   controls.append(play, slider, time);
+  if (previous) controls.append(previous);
+  if (next) controls.append(next);
   const tracks = audioSelect(video, (index) => {
     audio = index;
     if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
@@ -381,7 +400,20 @@ async function renderPlayer(id, { autoplay = false } = {}) {
   const meta = document.createElement("p");
   meta.className = "meta";
   meta.textContent = metaText(video);
-  playerEl.append(back, title, meta);
+  const previous = stepButton("Предыдущее", video, -1);
+  const next = stepButton("Следующее", video, 1);
+  const neighbors = document.createElement("div");
+  neighbors.className = "neighbors";
+  neighbors.append(previous, next);
+  playerEl.append(back, title, meta, neighbors);
+  playableFiles(video).then((files) => {
+    if (!neighbors.isConnected) return;
+    const index = files.findIndex((file) => file.id === video.id);
+    previous.disabled = index <= 0;
+    next.disabled = index < 0 || index >= files.length - 1;
+    if (previous.fullscreenTwin) previous.fullscreenTwin.disabled = previous.disabled;
+    if (next.fullscreenTwin) next.fullscreenTwin.disabled = next.disabled;
+  }).catch(() => {});
   if (!video.available) {
     playerEl.append(note("Файл сейчас недоступен."));
     return;
@@ -405,7 +437,15 @@ async function renderPlayer(id, { autoplay = false } = {}) {
     if (autoplay) node.play().catch(() => {});
     return;
   }
-  mountRemux(video, { autoplay });
+  const previousFull = stepButton("Предыдущее", video, -1);
+  const nextFull = stepButton("Следующее", video, 1);
+  previousFull.className = "step";
+  nextFull.className = "step";
+  previous.fullscreenTwin = previousFull;
+  next.fullscreenTwin = nextFull;
+  previousFull.disabled = previous.disabled;
+  nextFull.disabled = next.disabled;
+  mountRemux(video, { autoplay, previous: previousFull, next: nextFull });
 }
 
 async function render({ autoplay = false } = {}) {
