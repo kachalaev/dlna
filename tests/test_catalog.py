@@ -139,6 +139,24 @@ def test_offline_volume_keeps_files_and_rescan_picks_up_changes(tmp_path: Path):
     assert len(calls) == 3
 
 
+def test_permission_error_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = tmp_path / "lib2"
+    touch(root / "a.mp4")
+    app = make_app(tmp_path, [Volume("lib2", str(root))])
+
+    def blocked_walk(*args, **kwargs):
+        onerror = kwargs.get("onerror")
+        if onerror:
+            onerror(PermissionError(13, "Permission denied"))
+        return iter(())
+
+    monkeypatch.setattr("app.scanner.os.walk", blocked_walk)
+    app.state.scanner.scan()
+    with TestClient(app) as client:
+        assert client.get("/api/status").json()["error"] == "Нет доступа к архиву"
+        assert client.get("/api/browse").json()["files"] == []
+
+
 def test_walk_error_does_not_drop_known_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = tmp_path / "lib2"
     touch(root / "Фильмы" / "a.mp4")

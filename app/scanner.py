@@ -12,6 +12,15 @@ from app.probe import EMPTY_PROBE
 logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = frozenset({"mp4", "mkv", "avi"})
+_DISK_ERRNOS = frozenset({5, 6, 19, 60})
+
+
+def _problem_message(errors: list[OSError]) -> str:
+    if errors and all(isinstance(err, PermissionError) for err in errors):
+        return "Нет доступа к архиву"
+    if any(err.errno in _DISK_ERRNOS for err in errors):
+        return "Диск архива не отвечает"
+    return "Некоторые папки не удалось прочитать"
 
 
 class Scanner:
@@ -20,9 +29,11 @@ class Scanner:
         self.volumes = volumes
         self.probe = probe
         self._files_seen = 0
+        self._problem: str | None = None
 
     def scan(self) -> None:
         self._files_seen = 0
+        self._problem = None
         self.catalog.mark_scan_started()
         try:
             self.catalog.retire_volumes({volume.name for volume in self.volumes})
@@ -32,7 +43,7 @@ class Scanner:
                 error, found = self._scan_volume(volume)
                 had_error = error or had_error
                 pending.extend(found)
-            message = "Некоторые папки не удалось прочитать" if had_error else None
+            message = self._problem if had_error else None
             self.catalog.mark_scan_finished(self._files_seen, message)
             for video_id, path in pending:
                 self.catalog.save_probe(video_id, self._probe_safe(path))
@@ -88,9 +99,9 @@ class Scanner:
                     pending.append((video_id, full))
 
         if errors:
-            self.catalog.set_volume_state(
-                volume.name, volume.path, True, "Некоторые папки не удалось прочитать"
-            )
+            message = _problem_message(errors)
+            self._problem = message
+            self.catalog.set_volume_state(volume.name, volume.path, True, message)
             return True, pending
 
         self.catalog.prune_volume(volume.name, token)
