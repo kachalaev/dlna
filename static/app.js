@@ -248,6 +248,78 @@ async function renderListingBody(folder, query, gen) {
   listingEl.replaceChildren(...nodes);
 }
 
+const VOLUME_KEY = "archive-volume";
+const MUTE_KEY = "archive-muted";
+
+function savedLevel() {
+  const value = Number(localStorage.getItem(VOLUME_KEY));
+  if (!Number.isFinite(value) || value <= 0 || value > 1) return 1;
+  return value;
+}
+
+function savedMuted() {
+  return localStorage.getItem(MUTE_KEY) === "1";
+}
+
+function saveSound(level, muted) {
+  if (level > 0) localStorage.setItem(VOLUME_KEY, String(level));
+  localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+}
+
+function applySavedVolume(node) {
+  node.volume = savedLevel();
+  node.muted = savedMuted();
+  node.addEventListener("volumechange", () => {
+    if (!node.isConnected) return;
+    if (node.muted || node.volume === 0) saveSound(node.volume > 0 ? node.volume : savedLevel(), true);
+    else saveSound(node.volume, false);
+  });
+}
+
+function volumeControls(node) {
+  let level = savedLevel();
+  node.volume = level;
+  node.muted = savedMuted();
+  const mute = document.createElement("button");
+  mute.type = "button";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.className = "volume";
+  slider.min = "0";
+  slider.max = "100";
+  slider.step = "1";
+  slider.setAttribute("aria-label", "Громкость");
+
+  function paint() {
+    const audible = !node.muted && node.volume > 0;
+    slider.value = String(audible ? Math.round(node.volume * 100) : 0);
+    mute.textContent = audible ? "Без звука" : "Звук";
+  }
+
+  mute.addEventListener("click", () => {
+    if (node.muted || node.volume === 0) {
+      node.volume = level > 0 ? level : 1;
+      node.muted = false;
+      saveSound(node.volume, false);
+    } else {
+      level = node.volume;
+      node.muted = true;
+      saveSound(level, true);
+    }
+    paint();
+  });
+  slider.addEventListener("input", () => {
+    const next = Number(slider.value) / 100;
+    if (next > 0) level = next;
+    node.volume = next > 0 ? next : level;
+    node.muted = next === 0;
+    saveSound(level, next === 0);
+    paint();
+  });
+  paint();
+  return [mute, slider];
+}
+
 function metaText(video) {
   const bits = [video.ext.toUpperCase(), formatSize(video.size)];
   const duration = formatDuration(video.duration);
@@ -261,6 +333,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null } = 
   const node = document.createElement("video");
   node.playsInline = true;
   node.preload = "auto";
+  const sound = volumeControls(node);
   const controls = document.createElement("div");
   controls.className = "controls";
   const play = document.createElement("button");
@@ -318,7 +391,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null } = 
   const stage = document.createElement("div");
   stage.className = "stage";
   bindFullscreen(stage, node, fullscreen);
-  controls.append(play, slider, time);
+  controls.append(play, slider, time, ...sound);
   if (previous) controls.append(previous);
   if (next) controls.append(next);
   const tracks = audioSelect(video, (index) => {
@@ -427,6 +500,7 @@ async function renderPlayer(id, { autoplay = false } = {}) {
     node.controls = true;
     node.playsInline = true;
     node.preload = "metadata";
+    applySavedVolume(node);
     node.src = `/api/videos/${video.id}/stream`;
     node.autoplay = autoplay;
     node.addEventListener("ended", () => playNext(video));

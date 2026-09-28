@@ -197,6 +197,11 @@ h2 {
   border-color: white;
 }
 
+.stage:fullscreen .controls input[type="range"],
+.stage:-webkit-full-screen .controls input[type="range"] {
+  accent-color: white;
+}
+
 .controls {
   display: flex;
   align-items: center;
@@ -204,7 +209,17 @@ h2 {
   margin-top: 0.8rem;
 }
 
-.controls input[type="range"] { flex: 1; }
+.controls input[type="range"] {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  accent-color: var(--ink);
+}
+
+.controls input.volume {
+  flex: 0 0 6.5rem;
+  width: 6.5rem;
+  min-width: 6.5rem;
+}
 
 .controls select {
   max-width: 14rem;
