@@ -13,11 +13,15 @@ def playback_kind(ext: str) -> str:
 
 
 def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "libx264") -> list[str]:
-    # MKV и AVI браузер сам не играет. На выдаче картинка приводится к H.264
-    # до 1080p, а звук к AAC. Исходный файл на диске не меняется.
+    # MKV с 4K HEVC на Intel не успевает декодироваться программно, из-за этого
+    # картинка подтормаживает. Аппаратный путь декодирует через VideoToolbox.
+    hardware = encoder == "h264_videotoolbox"
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
+    if hardware:
+        command += ["-hwaccel", "videotoolbox"]
     if start > 0:
         command += ["-ss", f"{start:.3f}"]
+    height = "1080" if hardware else "720"
     command += [
         "-i",
         path,
@@ -28,12 +32,12 @@ def ffmpeg_remux_command(ffmpeg: str, path: str, start: float, encoder: str = "l
         "-sn",
         "-dn",
         "-vf",
-        "scale=-2:min(1080\\,ih)",
+        f"scale=-2:min({height}\\,ih)",
     ]
-    if encoder == "h264_videotoolbox":
-        command += ["-c:v", "h264_videotoolbox", "-b:v", "8000k", "-allow_sw", "1", "-pix_fmt", "yuv420p"]
+    if hardware:
+        command += ["-c:v", "h264_videotoolbox", "-b:v", "6000k", "-allow_sw", "1", "-pix_fmt", "yuv420p"]
     else:
-        command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", "48"]
+        command += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23", "-pix_fmt", "yuv420p", "-g", "48"]
     command += [
         "-c:a",
         "aac",
