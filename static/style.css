@@ -1,11 +1,11 @@
 :root {
-  --bg: #e7eeeb;
-  --ink: #15211c;
-  --muted: #5d6e68;
-  --line: #c9d6d0;
-  --accent: #0f6a52;
-  --danger: #8d3d32;
-  --screen: #111816;
+  --bg: #f7f7f5;
+  --ink: #141414;
+  --muted: #5e5e5e;
+  --line: #e3e1dc;
+  --accent: #8e1c2c;
+  --danger: #8e1c2c;
+  --screen: #0c0c0c;
   color-scheme: light;
 }
 
@@ -15,13 +15,11 @@ html, body { margin: 0; }
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(15, 106, 82, 0.08), transparent 50%),
-    var(--bg);
+  background: var(--bg);
   color: var(--ink);
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  font-size: 18px;
-  line-height: 1.45;
+  font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+  font-size: 17px;
+  line-height: 1.4;
 }
 
 button, input, video { font: inherit; color: inherit; }
@@ -29,7 +27,7 @@ button, input, video { font: inherit; color: inherit; }
 .wrap {
   width: min(880px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 2.5rem 0 4rem;
+  padding: 1.6rem 0 3rem;
 }
 
 .title-row {
@@ -37,15 +35,17 @@ button, input, video { font: inherit; color: inherit; }
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.55rem;
 }
 
 h1 {
   margin: 0;
   font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
-  font-size: clamp(3rem, 8vw, 4.5rem);
+  font-size: clamp(1.8rem, 4vw, 2.35rem);
   font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 0.95;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 h2 {
@@ -61,7 +61,7 @@ h2 {
   color: var(--muted);
 }
 
-.status { min-height: 1.45em; margin: 0.8rem 0 1rem; }
+.status { min-height: 1.4em; margin: 0.55rem 0 0.7rem; }
 
 #search {
   width: 100%;
@@ -74,12 +74,17 @@ h2 {
 
 #search:focus { border-bottom-color: var(--accent); }
 
-#rescan, .back, .controls button, .neighbors button {
-  border: 0;
-  background: var(--accent);
-  color: white;
-  padding: 0.55rem 0.9rem;
+#rescan, .controls button, .neighbors button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.4rem 0.7rem;
   cursor: pointer;
+}
+
+#rescan:hover, .neighbors button:hover, .controls button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 #rescan:disabled, .neighbors button:disabled, .controls button:disabled {
@@ -99,7 +104,7 @@ h2 {
 .stage:fullscreen .controls .step,
 .stage:-webkit-full-screen .controls .step { display: inline-block; }
 
-.back { background: transparent; color: var(--accent); padding: 0; }
+.back { background: transparent; color: var(--ink); padding: 0; border: 0; }
 
 .crumbs {
   display: flex;
@@ -114,7 +119,7 @@ h2 {
   background: transparent;
   padding: 0;
   cursor: pointer;
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .sep { color: var(--muted); }
@@ -129,7 +134,7 @@ h2 {
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line);
-  padding: 0.9rem 0;
+  padding: 0.55rem 0;
   cursor: pointer;
 }
 
@@ -178,6 +183,18 @@ h2 {
   padding: 2.2rem 1rem 1rem;
   color: white;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+
+.stage:fullscreen .controls button,
+.stage:-webkit-full-screen .controls button {
+  color: white;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.stage:fullscreen .controls button:hover,
+.stage:-webkit-full-screen .controls button:hover {
+  color: white;
+  border-color: white;
 }
 
 .controls {
