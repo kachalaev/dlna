@@ -1,0 +1,11 @@
+host: "0.0.0.0"
+port: 8080
+scan_interval_minutes: 15
+database: "data/catalog.db"
+ffmpeg: "ffmpeg"
+ffprobe: "ffprobe"
+
+# Одинаковые пути папок с разных томов на сайте сливаются в одну папку.
+volumes:
+  - name: lib2
+    path: "/Volumes/lib2"
