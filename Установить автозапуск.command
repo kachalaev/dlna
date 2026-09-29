@@ -25,7 +25,7 @@ if [[ ! -f "$root/config.yaml" ]]; then
   exit 1
 fi
 
-chmod 755 "$root/scripts/run-server.sh"
+chmod 755 "$root/scripts/run-server.sh" "$root/scripts/launch-at-login.sh"
 support="$HOME/Library/Application Support/dlna"
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs" "$support"
 
@@ -48,7 +48,8 @@ cat > "$plist" <<EOF
   <string>${label}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/osascript</string>
+    <string>/bin/bash</string>
+    <string>${root}/scripts/launch-at-login.sh</string>
     <string>${launcher}</string>
   </array>
   <key>RunAtLoad</key>
@@ -76,8 +77,8 @@ launchctl bootstrap "gui/${uid}" "$plist"
 launchctl enable "gui/${uid}/${label}"
 launchctl kickstart -k "gui/${uid}/${label}"
 
-echo "Готово. Сайт запускается сам после входа в учётную запись Mac."
+echo "Готово. Сайт запускается сам в течение пары минут после входа в учётную запись Mac."
 echo "Если система спросит разрешение управлять Terminal, нажмите OK."
 echo "Окно Terminal можно закрыть: сайт останется запущенным."
-echo "Сейчас он тоже должен открываться: http://127.0.0.1:8080"
+echo "Сейчас он тоже должен открыться примерно через полминуты: http://127.0.0.1:8080"
 echo "Журнал: $HOME/Library/Logs/dlna.log"
