@@ -41,10 +41,12 @@ def touch(path: Path, payload: bytes = b"video") -> None:
     path.write_bytes(payload)
 
 
-def test_example_config_points_at_lib2():
+def test_example_config_points_at_archive_volumes():
     config = load_config(Path("config.example.yaml"))
-    assert config.volumes[0].name == "lib2"
-    assert config.volumes[0].path == "/Volumes/lib2"
+    assert [(volume.name, volume.path) for volume in config.volumes] == [
+        ("lib2", "/Volumes/lib2"),
+        ("lib1", "/Volumes/lib1"),
+    ]
     assert config.host == "0.0.0.0"
 
 

@@ -9,3 +9,5 @@ ffprobe: "ffprobe"
 volumes:
   - name: lib2
     path: "/Volumes/lib2"
+  - name: lib1
+    path: "/Volumes/lib1"

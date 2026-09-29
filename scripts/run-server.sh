@@ -4,9 +4,9 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-# После входа в систему диск может появиться не сразу.
+# После входа диски могут появиться не сразу.
 for _ in $(seq 1 30); do
-  if [[ -d /Volumes/lib2 ]]; then
+  if [[ -d /Volumes/lib1 && -d /Volumes/lib2 ]]; then
     break
   fi
   sleep 2
