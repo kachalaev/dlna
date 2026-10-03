@@ -6,8 +6,6 @@ const nativeHls = /iPad|iPhone|iPod/.test(navigator.userAgent)
 const listingEl = document.querySelector("#listing");
 const playerEl = document.querySelector("#player");
 const dock = document.querySelector("#dock");
-let albumNode = null;
-let albumPath = null;
 const crumbsEl = document.querySelector("#crumbs");
 const statusEl = document.querySelector("#status");
 const searchEl = document.querySelector("#search");
@@ -324,72 +322,145 @@ function trackTitle(file) {
   return file.name.replace(/\.[^.]+$/, "");
 }
 
-function adoptAlbum(section) {
-  if (albumNode === section) {
-    albumPath = section.dataset.path || "";
-    return;
+const PLAYLIST_KEY = "archive-playlist";
+let playlist = loadPlaylist();
+let paintPlaylist = () => {};
+let refillUpcoming = () => {};
+let playAt = () => {};
+let clearPlaylist = () => {};
+let playerReady = false;
+
+function loadPlaylist() {
+  try {
+    const data = JSON.parse(localStorage.getItem(PLAYLIST_KEY) || "[]");
+    if (!Array.isArray(data)) return [];
+    return data.filter((item) => item && item.id != null && item.name);
+  } catch (_error) {
+    return [];
   }
-  if (albumNode) {
-    const old = albumNode.querySelector("audio");
-    if (old) {
-      old.pause();
-      old.removeAttribute("src");
-    }
-    albumNode.remove();
-  }
-  albumNode = section;
-  albumPath = section.dataset.path || "";
-  if (!dock.contains(section)) dock.hidden = true;
 }
 
-function parkAlbum() {
-  if (!albumNode) {
-    dock.hidden = true;
-    return;
-  }
-  const audio = albumNode.querySelector("audio");
-  if (!audio || !audio.getAttribute("src")) {
-    dock.hidden = true;
-    return;
-  }
-  if (!dock.contains(albumNode)) dock.append(albumNode);
-  dock.hidden = false;
+function savePlaylist() {
+  localStorage.setItem(PLAYLIST_KEY, JSON.stringify(playlist));
 }
 
-function dismissDock() {
-  const section = albumNode;
-  albumNode = null;
-  albumPath = null;
-  dock.hidden = true;
-  if (!section) return;
-  const audio = section.querySelector("audio");
-  if (audio) {
-    audio.pause();
-    audio.removeAttribute("src");
-  }
-  section.remove();
-}
-
-function takeAlbum(files, path, playId) {
-  if (albumNode && albumPath === (path || "")) {
-    if (playId && albumNode.dataset.track !== String(playId) && albumNode.playTrack) {
-      albumNode.playTrack(playId);
-    }
-    return albumNode;
-  }
-  return mountAlbum(files, path, playId);
-}
-
-function mountAlbum(files, path, playId) {
-  const section = document.createElement("section");
-  section.className = "album";
-  section.dataset.path = path || "";
-  section.playTrack = (id) => {
-    const item = files.findIndex((file) => String(file.id) === String(id));
-    if (item >= 0) playAt(item);
+function snapshotTrack(file) {
+  return {
+    id: file.id,
+    name: file.name,
+    ext: file.ext || "",
+    duration: file.duration || null,
+    folder: file.folder || "",
   };
+}
+
+function hasTrack(id) {
+  return playlist.some((item) => item.id === id);
+}
+
+function markPlaylistButtons() {
+  document.querySelectorAll("[data-add]").forEach((button) => {
+    const present = hasTrack(Number(button.dataset.add));
+    button.textContent = present ? "В плейлисте" : "Добавить";
+    button.disabled = present;
+  });
+}
+
+function showDock() {
+  if (!playlist.length) {
+    dock.hidden = true;
+    document.body.classList.remove("has-dock");
+    return;
+  }
+  bootPlayer();
+  dock.hidden = false;
+  document.body.classList.add("has-dock");
+}
+
+function addTracks(files) {
+  let changed = false;
+  files.forEach((file) => {
+    if (file.playback && file.playback !== "audio") return;
+    if (file.available === false) return;
+    if (hasTrack(file.id)) return;
+    playlist.push(snapshotTrack(file));
+    changed = true;
+  });
+  if (changed) {
+    savePlaylist();
+    if (playerReady) refillUpcoming();
+  }
+  showDock();
+  paintPlaylist();
+  markPlaylistButtons();
+}
+
+function playTrackId(id) {
+  const item = playlist.findIndex((track) => String(track.id) === String(id));
+  if (item >= 0) playAt(item);
+}
+
+function openTrack(file, albumFiles) {
+  if (!file || file.available === false) return;
+  if (!playlist.length) addTracks(albumFiles);
+  else if (!hasTrack(file.id)) addTracks([file]);
+  playTrackId(file.id);
+}
+
+function albumSource(files, path, playId) {
+  const section = document.createElement("section");
+  section.className = "album-source";
+  const head = document.createElement("div");
+  head.className = "album-head";
   const heading = document.createElement("h2");
   heading.textContent = path ? path.split("/").pop() : "Альбом";
+  const addAll = document.createElement("button");
+  addAll.type = "button";
+  addAll.className = "text-btn";
+  addAll.textContent = "Добавить альбом";
+  addAll.addEventListener("click", () => addTracks(files));
+  head.append(heading, addAll);
+  const rows = document.createElement("div");
+  files.forEach((file) => {
+    const row = document.createElement("div");
+    row.className = file.available ? "row track-row" : "row track-row unavailable";
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "name";
+    name.textContent = trackTitle(file);
+    name.addEventListener("click", () => openTrack(file, files));
+    const meta = document.createElement("span");
+    meta.className = "row-meta";
+    const bits = [file.ext.toUpperCase()];
+    const duration = formatDuration(file.duration);
+    if (duration) bits.push(duration);
+    if (!file.available) bits.push("недоступен");
+    meta.textContent = bits.join(" · ");
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "text-btn";
+    add.dataset.add = String(file.id);
+    add.textContent = hasTrack(file.id) ? "В плейлисте" : "Добавить";
+    add.disabled = hasTrack(file.id) || !file.available;
+    add.addEventListener("click", () => addTracks([file]));
+    row.append(name, meta, add);
+    rows.append(row);
+  });
+  section.append(head, rows);
+  if (playId) {
+    const file = files.find((item) => String(item.id) === String(playId));
+    if (file) openTrack(file, files);
+  }
+  return section;
+}
+
+function bootPlayer() {
+  if (playerReady) return;
+  playerReady = true;
+  const section = document.createElement("section");
+  section.className = "album";
+  const heading = document.createElement("h2");
+  heading.textContent = "Плейлист";
   const now = document.createElement("p");
   now.className = "now";
   now.textContent = "Выберите запись";
@@ -423,40 +494,90 @@ function mountAlbum(files, path, playId) {
   let upcoming = [];
   let played = [];
   const heard = new Set();
-  const buttons = files.map((file) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = file.available ? "row" : "row unavailable";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = trackTitle(file);
-    const meta = document.createElement("span");
-    meta.className = "row-meta";
-    const bits = [file.ext.toUpperCase()];
-    const duration = formatDuration(file.duration);
-    if (duration) bits.push(duration);
-    if (!file.available) bits.push("недоступен");
-    meta.textContent = bits.join(" · ");
-    button.append(name, meta);
-    return button;
-  });
+  const list = document.createElement("div");
+  list.className = "playlist";
 
   function paint() {
-    const file = files[index];
+    const file = playlist[index];
     now.textContent = file ? trackTitle(file) : "Выберите запись";
-    buttons.forEach((button, item) => button.classList.toggle("current", item === index));
     const duration = file && file.duration ? file.duration : node.duration;
     const known = Number.isFinite(duration) && duration > 0;
     slider.disabled = !known;
     if (known) slider.max = String(Math.floor(duration));
+    list.replaceChildren(...playlist.map((track, item) => playlistRow(track, item)));
+    const current = list.querySelector(".current");
+    if (current) current.scrollIntoView({ block: "nearest" });
   }
 
-  function availableIndices() {
-    const items = [];
-    files.forEach((file, item) => {
-      if (file.available) items.push(item);
+  function playlistRow(track, item) {
+    const row = document.createElement("div");
+    row.className = item === index ? "row current" : "row";
+    const grip = document.createElement("button");
+    grip.type = "button";
+    grip.className = "grip";
+    grip.draggable = true;
+    grip.setAttribute("aria-label", "Перетащить");
+    grip.addEventListener("dragstart", (event) => {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(item));
+      row.classList.add("dragging");
     });
-    return items;
+    grip.addEventListener("dragend", () => row.classList.remove("dragging"));
+    const pos = document.createElement("input");
+    pos.className = "pos";
+    pos.type = "number";
+    pos.min = "1";
+    pos.max = String(playlist.length);
+    pos.value = String(item + 1);
+    pos.setAttribute("aria-label", `Позиция ${item + 1}`);
+    pos.addEventListener("change", () => {
+      const target = Math.min(playlist.length, Math.max(1, Number(pos.value) || item + 1)) - 1;
+      moveTrack(item, target);
+    });
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "name";
+    name.textContent = trackTitle(track);
+    name.addEventListener("click", () => {
+      if (item === index) play.click();
+      else playAt(item);
+    });
+    const meta = document.createElement("span");
+    meta.className = "row-meta";
+    meta.textContent = formatDuration(track.duration) || "";
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("drop");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drop"));
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      row.classList.remove("drop");
+      const from = Number(event.dataTransfer.getData("text/plain"));
+      if (Number.isFinite(from)) moveTrack(from, item);
+    });
+    row.append(grip, pos, name, meta);
+    return row;
+  }
+
+  function moveTrack(from, to) {
+    if (from === to || from < 0 || to < 0 || from >= playlist.length) return;
+    to = Math.max(0, Math.min(playlist.length - 1, to));
+    const currentId = index >= 0 && playlist[index] ? playlist[index].id : null;
+    const upcomingIds = upcoming.map((slot) => playlist[slot] && playlist[slot].id).filter((id) => id != null);
+    const playedIds = played.map((slot) => playlist[slot] && playlist[slot].id).filter((id) => id != null);
+    const [moved] = playlist.splice(from, 1);
+    playlist.splice(to, 0, moved);
+    index = currentId == null ? -1 : playlist.findIndex((track) => track.id === currentId);
+    const locate = (id) => playlist.findIndex((track) => track.id === id);
+    upcoming = upcomingIds.map(locate).filter((slot) => slot >= 0);
+    played = playedIds.map(locate).filter((slot) => slot >= 0);
+    savePlaylist();
+    paint();
+  }
+
+  function ids() {
+    return playlist.map((_track, item) => item);
   }
 
   function shuffledCopy(items) {
@@ -470,16 +591,19 @@ function mountAlbum(files, path, playId) {
     return copy;
   }
 
-  function refillUpcoming() {
-    const rest = availableIndices().filter((item) => item !== index && !heard.has(item));
-    upcoming = shuffle ? shuffledCopy(rest) : [];
-    played = index >= 0 ? [index] : [];
+  function queueRest() {
+    return ids().filter((item) => item !== index && playlist[item] && !heard.has(playlist[item].id));
   }
 
-  function playAt(nextIndex, keepHistory) {
-    const file = files[nextIndex];
-    if (!file || !file.available) return;
-    heard.add(nextIndex);
+  refillUpcoming = () => {
+    upcoming = shuffle ? shuffledCopy(queueRest()) : [];
+    played = index >= 0 ? [index] : [];
+  };
+
+  playAt = (nextIndex, keepHistory) => {
+    const file = playlist[nextIndex];
+    if (!file) return;
+    heard.add(file.id);
     if (shuffle && !keepHistory) {
       upcoming = upcoming.filter((item) => item !== nextIndex);
       if (!played.length || played[played.length - 1] !== nextIndex) played.push(nextIndex);
@@ -487,42 +611,25 @@ function mountAlbum(files, path, playId) {
     index = nextIndex;
     slider.value = "0";
     paint();
-    section.dataset.track = String(file.id);
-    const route = readRoute();
-    if (!route.watchId && !route.q && (route.folder || "") === (path || "")) {
-      const url = new URL(location.href);
-      url.searchParams.set("play", String(file.id));
-      history.replaceState({}, "", url);
-    }
     node.src = `/api/videos/${file.id}/stream`;
     node.play().then(() => setIcon(play, "pause", "Пауза")).catch(() => setIcon(play, "play", "Слушать"));
-  }
+  };
 
   function neighbor(delta) {
-    for (let item = index + delta; item >= 0 && item < files.length; item += delta) {
-      if (files[item].available) return item;
-    }
+    for (let item = index + delta; item >= 0 && item < playlist.length; item += delta) return item;
     return -1;
   }
-
-  buttons.forEach((button, item) => {
-    button.addEventListener("click", () => {
-      if (!files[item].available) return;
-      if (item === index) play.click();
-      else playAt(item);
-    });
-  });
   play.addEventListener("click", () => {
     if (index < 0) {
       if (shuffle) {
-        const order = upcoming.length ? upcoming.slice() : shuffledCopy(availableIndices());
+        const order = upcoming.length ? upcoming.slice() : shuffledCopy(ids());
         if (!order.length) return;
         upcoming = order.slice(1);
         played = [];
         playAt(order[0]);
         return;
       }
-      const first = files.findIndex((file) => file.available);
+      const first = playlist.length ? 0 : -1;
       if (first >= 0) playAt(first);
       return;
     }
@@ -559,15 +666,12 @@ function mountAlbum(files, path, playId) {
     if (target >= 0) playAt(target);
     else if (index < 0) play.click();
   });
-  node.addEventListener("play", () => {
-    setIcon(play, "pause", "Пауза");
-    adoptAlbum(section);
-  });
+  node.addEventListener("play", () => setIcon(play, "pause", "Пауза"));
   node.addEventListener("pause", () => setIcon(play, "play", "Слушать"));
   node.addEventListener("loadedmetadata", paint);
   node.addEventListener("timeupdate", () => {
     const current = node.currentTime || 0;
-    const duration = Number.isFinite(node.duration) ? node.duration : (files[index] && files[index].duration) || 0;
+    const duration = Number.isFinite(node.duration) ? node.duration : (playlist[index] && playlist[index].duration) || 0;
     if (!scrubbing && duration) slider.value = String(Math.min(duration, current));
     time.textContent = `${formatDuration(current)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
   });
@@ -609,27 +713,32 @@ function mountAlbum(files, path, playId) {
   tail.className = "tail";
   tail.setAttribute("aria-hidden", "true");
   controls.append(previous, play, next, mix, slider, time, tail, ...sound);
-  const list = document.createElement("div");
-  list.className = "playlist";
-  list.append(...buttons);
   const close = document.createElement("button");
   close.type = "button";
   close.className = "dock-close";
-  setIcon(close, "close", "Закрыть плеер");
-  close.addEventListener("click", dismissDock);
+  setIcon(close, "close", "Очистить плейлист");
+  close.addEventListener("click", () => clearPlaylist());
   section.append(close, heading, now, node, controls, list);
-  const start = files.findIndex((file) => String(file.id) === String(playId));
-  if (start >= 0) {
-    if (shuffle) upcoming = shuffledCopy(availableIndices().filter((item) => item !== start));
-    playAt(start);
-  } else if (shuffle) {
-    upcoming = shuffledCopy(availableIndices());
-  }
-  return section;
+  dock.append(section);
+  paintPlaylist = paint;
+  clearPlaylist = () => {
+    playlist = [];
+    index = -1;
+    upcoming = [];
+    played = [];
+    heard.clear();
+    node.pause();
+    node.removeAttribute("src");
+    savePlaylist();
+    paint();
+    showDock();
+    markPlaylistButtons();
+  };
+  if (shuffle) refillUpcoming();
+  paint();
 }
 
 async function renderListingBody(folder, query, gen, play) {
-  parkAlbum();
   if (query) {
     crumbsEl.hidden = true;
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
@@ -649,7 +758,7 @@ async function renderListingBody(folder, query, gen, play) {
     .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true, sensitivity: "base" }));
   const videos = data.files.filter((file) => file.playback !== "audio");
   const nodes = [];
-  if (audios.length) nodes.push(takeAlbum(audios, data.path, play));
+  if (audios.length) nodes.push(albumSource(audios, data.path, play));
   const folders = data.folders.filter((item) => item.count > 0);
   nodes.push(...folders.map(folderRow), ...videos.map(fileRow));
   if (!nodes.length) {
@@ -657,7 +766,6 @@ async function renderListingBody(folder, query, gen, play) {
     nodes.push(note(scanning ? "Каталог обновляется. Файлы появятся по мере обхода." : "В этой папке пусто."));
   }
   listingEl.replaceChildren(...nodes);
-  if (albumNode && listingEl.contains(albumNode)) dock.hidden = true;
 }
 
 const VOLUME_KEY = "archive-volume";
@@ -1102,7 +1210,6 @@ async function render({ autoplay = false, resume = true } = {}) {
   const route = readRoute();
   searchEl.value = route.q || "";
   if (route.watchId) {
-    parkAlbum();
     listingEl.hidden = true;
     crumbsEl.hidden = true;
     playerEl.hidden = false;
@@ -1171,7 +1278,7 @@ function onPlayerKey(event) {
   }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   if (playerEl.hidden) {
-    const album = (!dock.hidden && dock.querySelector(".album")) || (!listingEl.hidden && listingEl.querySelector(".album"));
+    const album = !dock.hidden && dock.querySelector(".album");
     if (!album) return;
     const field = event.target;
     const fieldTag = field && field.tagName;
@@ -1238,6 +1345,7 @@ document.addEventListener("visibilitychange", () => {
 });
 document.addEventListener("keydown", onPlayerKey);
 window.addEventListener("popstate", () => render());
+showDock();
 render();
 refreshStatus();
 setInterval(refreshStatus, 5000);
