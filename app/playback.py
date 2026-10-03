@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 
 
+_QUALITY_STEPS = (360, 480, 720, 1080, 1440, 2160)
+
+
 def playback_kind(ext: str) -> str:
     if ext == "mp4":
         return "direct"
@@ -12,15 +15,67 @@ def playback_kind(ext: str) -> str:
     return "none"
 
 
+def quality_options(source_height) -> list:
+    # Ступени не выше файла. Верхняя — его собственная чётная высота.
+    try:
+        height = int(source_height)
+    except (TypeError, ValueError):
+        height = 0
+    if height <= 0:
+        return [720]
+    even = height - (height % 2)
+    if even < 2:
+        return [720]
+    options = [step for step in _QUALITY_STEPS if step < even]
+    options.append(even)
+    return options
+
+
+def chosen_height(source_height, requested) -> int:
+    options = quality_options(source_height)
+    if requested is None:
+        return options[-1]
+    try:
+        value = int(requested)
+    except (TypeError, ValueError):
+        return options[-1]
+    if value <= 0:
+        return options[-1]
+    lower = [item for item in options if item <= value]
+    return lower[-1] if lower else options[0]
+
+
+def serve_original(kind: str, audio_index, source_height, requested) -> bool:
+    # MP4 без выбора дорожки и без снижения высоты отдаётся файлом как есть.
+    if kind != "direct" or audio_index is not None:
+        return False
+    if requested is None:
+        return True
+    return chosen_height(source_height, requested) == quality_options(source_height)[-1]
+
+
+def _scale_filter(height: int) -> str:
+    return f"scale=-2:min({int(height)}\\,ih)"
+
+
+def _h264_level(height: int) -> str:
+    if height <= 1080:
+        return "4.0"
+    if height <= 1440:
+        return "5.0"
+    return "5.1"
+
+
 def ffmpeg_remux_command(
     ffmpeg: str,
     path: str,
     start: float,
     encoder: str = "libx264",
     audio_index: int = 0,
+    height: int = 720,
 ) -> list[str]:
     # MacBook Pro A1502 не декодирует HEVC аппаратно. VideoToolbox только
-    # замедляет. Лёгкий программный H.264 до 720p — самый быстрый вариант.
+    # замедляет. Высоту выбирает зритель, но не выше самого файла.
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
     if start > 0:
         command += ["-ss", f"{start:.3f}"]
@@ -34,7 +89,7 @@ def ffmpeg_remux_command(
         "-sn",
         "-dn",
         "-vf",
-        "scale=-2:min(720\\,ih)",
+        _scale_filter(height),
         "-c:v",
         encoder,
         "-preset",
@@ -71,6 +126,7 @@ def ffmpeg_hls_command(
     directory: Path,
     encoder: str = "libx264",
     audio_index: int = 0,
+    height: int = 720,
 ) -> list[str]:
     # Safari на Mac и iPhone не играет непрерывный MP4 без размера файла.
     # HLS из коротких MPEG-TS они открывают сами. Профиль Main и AAC-LC
@@ -88,7 +144,7 @@ def ffmpeg_hls_command(
         "-sn",
         "-dn",
         "-vf",
-        "scale=-2:min(720\\,ih)",
+        _scale_filter(height),
         "-c:v",
         encoder,
         "-preset",
@@ -102,7 +158,7 @@ def ffmpeg_hls_command(
         "-profile:v",
         "main",
         "-level",
-        "4.0",
+        _h264_level(height),
         "-g",
         "48",
         "-c:a",

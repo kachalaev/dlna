@@ -456,17 +456,48 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   let offset = 0;
   let position = begin;
   let audio = 0;
+  const heights = video.qualities || [];
+  let height = heights[0] || 0;
+  const maxHeight = height;
+  const canDirect = video.playback === "direct" && (video.audio_tracks || []).length < 2;
   let playing = false;
+  let playToken = 0;
   bindProgress(video, () => position, () => playing);
 
+  function directNow() {
+    return canDirect && (!height || height === maxHeight);
+  }
+
   function start(at) {
-    offset = at;
+    const token = ++playToken;
     position = at;
     playing = true;
-    node.src = nativeHls
-      ? `/api/videos/${video.id}/hls.m3u8?t=${at.toFixed(3)}&a=${audio}`
-      : `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
-    node.play().catch(() => {});
+    if (directNow()) {
+      offset = 0;
+      const playAt = () => {
+        if (token !== playToken) return;
+        if (at > 0) {
+          const limit = Number.isFinite(node.duration) ? Math.max(0, node.duration - 0.25) : at;
+          node.currentTime = Math.min(at, limit);
+        }
+        node.play().catch(() => {});
+      };
+      if (node.dataset.mode !== "direct") {
+        node.dataset.mode = "direct";
+        node.src = `/api/videos/${video.id}/stream`;
+        node.addEventListener("loadedmetadata", playAt, { once: true });
+      } else {
+        playAt();
+      }
+    } else {
+      offset = at;
+      node.dataset.mode = "remux";
+      const quality = height ? `&h=${height}` : "";
+      node.src = nativeHls
+        ? `/api/videos/${video.id}/hls.m3u8?t=${at.toFixed(3)}&a=${audio}${quality}`
+        : `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}${quality}`;
+      node.play().catch(() => {});
+    }
     setIcon(play, "pause", "Пауза");
     rememberNow();
     showControls();
@@ -549,15 +580,36 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     audio = index;
     if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
   });
+  const quality = qualitySelect(video, (next) => {
+    height = next;
+    if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
+  });
   const tail = document.createElement("span");
   tail.className = "tail";
   tail.setAttribute("aria-hidden", "true");
   controls.append(tail);
+  if (quality) controls.append(quality);
   if (tracks) controls.append(tracks);
   controls.append(fullscreen);
   stage.append(node, controls);
   playerEl.append(stage);
   if (autoplay) start(begin);
+}
+
+function qualitySelect(video, onChange) {
+  const heights = video.qualities || [];
+  if (heights.length < 2) return null;
+  const select = document.createElement("select");
+  select.className = "quality";
+  select.setAttribute("aria-label", "Качество");
+  heights.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = String(item);
+    option.textContent = `${item}p`;
+    select.append(option);
+  });
+  select.addEventListener("change", () => onChange(Number(select.value) || heights[0]));
+  return select;
 }
 
 function audioSelect(video, onChange) {
@@ -650,7 +702,8 @@ async function renderPlayer(id, { autoplay = false, resume = true } = {}) {
     playerEl.append(note("Файл есть в каталоге. Просмотр AVI в браузере не включён."));
     return;
   }
-  if (video.playback === "direct" && (video.audio_tracks || []).length < 2) {
+  const heights = video.qualities || [];
+  if (video.playback === "direct" && (video.audio_tracks || []).length < 2 && heights.length < 2) {
     const node = document.createElement("video");
     node.controls = true;
     node.playsInline = true;

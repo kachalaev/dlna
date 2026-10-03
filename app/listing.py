@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from app.playback import playback_kind
+from app.playback import playback_kind, quality_options
 
 _LANGUAGES = {
     "ru": "Русский",
@@ -100,6 +100,7 @@ def public_video(row: dict, mounted: set[str]) -> dict:
         "audio_tracks": audio_tracks(row.get("audio_tracks")),
         "available": row["volume_name"] in mounted,
         "playback": playback_kind(row["ext"]),
+        "qualities": list(reversed(quality_options(row.get("height")))),
     }
 
 

@@ -301,6 +301,11 @@ h2 {
   border-bottom-color: rgba(255, 255, 255, 0.45);
 }
 
+.stage .controls select.quality {
+  flex: none;
+  max-width: 6.5rem;
+}
+
 .stage .controls select option {
   color: #141414;
 }

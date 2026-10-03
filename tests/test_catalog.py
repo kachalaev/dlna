@@ -8,7 +8,15 @@ from fastapi.testclient import TestClient
 
 from app.config import Config, Volume, load_config
 from app.main import create_app
-from app.playback import ffmpeg_hls_command, ffmpeg_remux_command, playback_kind, rewrite_hls_playlist
+from app.playback import (
+    chosen_height,
+    ffmpeg_hls_command,
+    ffmpeg_remux_command,
+    playback_kind,
+    quality_options,
+    rewrite_hls_playlist,
+    serve_original,
+)
 from app.probe import parse_probe
 
 
@@ -223,6 +231,12 @@ def test_playback_routes(tmp_path: Path):
         direct = client.get(f"/api/videos/{files['clip.mp4']['id']}/stream", headers={"Range": "bytes=0-3"})
         assert direct.status_code == 206
         assert direct.content == b"0123"
+        detail = client.get(f"/api/videos/{files['clip.mp4']['id']}").json()
+        assert detail["qualities"] == [1080, 720, 480, 360]
+        original = client.get(f"/api/videos/{files['clip.mp4']['id']}/stream", params={"h": 1080})
+        assert original.status_code == 200
+        lowered = client.get(f"/api/videos/{files['clip.mp4']['id']}/stream", params={"h": 720})
+        assert lowered.status_code == 503
         remux = client.get(f"/api/videos/{files['film.mkv']['id']}/stream")
         assert remux.status_code == 503
         avi = client.get(f"/api/videos/{files['old.avi']['id']}/stream")
@@ -260,6 +274,20 @@ def test_playback_helpers():
     assert playback_kind("mp4") == "direct"
     assert playback_kind("mkv") == "remux"
     assert playback_kind("avi") == "remux"
+    assert quality_options(1080) == [360, 480, 720, 1080]
+    assert quality_options(2160) == [360, 480, 720, 1080, 1440, 2160]
+    assert quality_options(800) == [360, 480, 720, 800]
+    assert quality_options(300) == [300]
+    assert quality_options(None) == [720]
+    assert chosen_height(1080, None) == 1080
+    assert chosen_height(1080, 720) == 720
+    assert chosen_height(1080, 9000) == 1080
+    assert chosen_height(800, 700) == 480
+    assert serve_original("direct", None, 1080, None)
+    assert serve_original("direct", None, 1080, 1080)
+    assert not serve_original("direct", None, 1080, 720)
+    assert not serve_original("direct", 0, 1080, None)
+    assert not serve_original("remux", None, 1080, None)
     command = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 12.5)
     assert command[command.index("-ss") + 1] == "12.500"
     assert "libx264" in command
@@ -269,11 +297,19 @@ def test_playback_helpers():
     assert "-ss" not in still
     chosen = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, audio_index=1)
     assert "0:a:1?" in chosen
+    full = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, height=1080)
+    assert "scale=-2:min(1080\\,ih)" in full
+    small = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, height=480)
+    assert "scale=-2:min(480\\,ih)" in small
     hls = ffmpeg_hls_command("ffmpeg", "/Volumes/lib2/a.mkv", 12.5, Path("/tmp/hls"))
     assert hls[hls.index("-ss") + 1] == "12.500"
     assert "hls" in hls
     assert "aac_low" in hls
     assert hls[-1].endswith("index.m3u8")
+    assert hls[hls.index("-level") + 1] == "4.0"
+    large = ffmpeg_hls_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, Path("/tmp/hls"), height=2160)
+    assert large[large.index("-level") + 1] == "5.1"
+    assert "scale=-2:min(2160\\,ih)" in large
     playlist = rewrite_hls_playlist("#EXTM3U\n#EXTINF:4.0,\nseg00000.ts\n", "/api/videos/5/hls/token/")
     assert "seg00000.ts" in playlist
     assert playlist.splitlines()[-1] == "/api/videos/5/hls/token/seg00000.ts"

@@ -19,7 +19,15 @@ from app.config import Config, Volume
 from app.db import Catalog
 from app.listing import build_listing, normalize_folder, public_video, search_videos
 from app.hls import HlsHub
-from app.playback import ffmpeg_hls_command, ffmpeg_remux_command, path_inside, playback_kind, rewrite_hls_playlist
+from app.playback import (
+    chosen_height,
+    ffmpeg_hls_command,
+    ffmpeg_remux_command,
+    path_inside,
+    playback_kind,
+    rewrite_hls_playlist,
+    serve_original,
+)
 from app.probe import probe_file
 from app.scanner import Scanner
 
@@ -125,7 +133,12 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         return public_video(row, mounted())
 
     @app.get("/api/videos/{video_id}/stream")
-    async def stream(video_id: int, t: float = Query(0), a: Optional[int] = Query(None)):
+    async def stream(
+        video_id: int,
+        t: float = Query(0),
+        a: Optional[int] = Query(None),
+        h: Optional[int] = Query(None),
+    ):
         row = catalog.get_video(video_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Файл не найден")
@@ -136,16 +149,17 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         media = Path(row["abs_path"])
         if not path_inside(Path(volume.path), media):
             raise HTTPException(status_code=404, detail="Файл сейчас недоступен")
-        if kind == "direct" and a is None:
+        if serve_original(kind, a, row["height"], h):
             return FileResponse(
                 media,
                 media_type="video/mp4",
                 headers={"Cache-Control": "no-store"},
             )
         audio, start = _audio_and_start(a, t, row["duration"])
+        height = chosen_height(row["height"], h)
         prepared = _require_ffmpeg(config.ffmpeg)
         process, first, stderr = await _start_ffmpeg(
-            ffmpeg_remux_command(prepared, str(media), start, "libx264", audio)
+            ffmpeg_remux_command(prepared, str(media), start, "libx264", audio, height)
         )
         if process is None or not first:
             raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
@@ -156,16 +170,22 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         )
 
     @app.get("/api/videos/{video_id}/hls.m3u8")
-    async def hls_playlist(video_id: int, t: float = Query(0), a: Optional[int] = Query(None)):
+    async def hls_playlist(
+        video_id: int,
+        t: float = Query(0),
+        a: Optional[int] = Query(None),
+        h: Optional[int] = Query(None),
+    ):
         row, media = _playable_row(video_id)
-        if playback_kind(row["ext"]) == "direct" and a is None:
+        if serve_original(playback_kind(row["ext"]), a, row["height"], h):
             raise HTTPException(status_code=404, detail="Для этого файла поток HLS не нужен")
         audio, start = _audio_and_start(a, t, row["duration"])
+        height = chosen_height(row["height"], h)
         prepared = _require_ffmpeg(config.ffmpeg)
-        key = f"{video_id}:{start:.3f}:{audio}"
+        key = f"{video_id}:{start:.3f}:{audio}:{height}"
 
         def command_for(directory: Path):
-            return ffmpeg_hls_command(prepared, str(media), start, directory, "libx264", audio)
+            return ffmpeg_hls_command(prepared, str(media), start, directory, "libx264", audio, height)
 
         session = hls.open_session(video_id, key, command_for)
         if not await _wait_hls(session):
