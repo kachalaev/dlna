@@ -1,4 +1,7 @@
-const nativeHls = document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
+// Edge на Windows отвечает, что умеет HLS, но наш поток не запускает.
+const nativeHls = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  || (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg|OPR|Android/.test(navigator.userAgent));
 
 const listingEl = document.querySelector("#listing");
 const playerEl = document.querySelector("#player");
