@@ -353,6 +353,10 @@ function mountAlbum(files, path, playId) {
   slider.setAttribute("aria-label", "Позиция");
   let index = -1;
   let scrubbing = false;
+  let shuffle = localStorage.getItem("archive-shuffle") === "1";
+  let upcoming = [];
+  let played = [];
+  const heard = new Set();
   const buttons = files.map((file) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -381,9 +385,39 @@ function mountAlbum(files, path, playId) {
     if (known) slider.max = String(Math.floor(duration));
   }
 
-  function playAt(nextIndex) {
+  function availableIndices() {
+    const items = [];
+    files.forEach((file, item) => {
+      if (file.available) items.push(item);
+    });
+    return items;
+  }
+
+  function shuffledCopy(items) {
+    const copy = items.slice();
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const swap = copy[i];
+      const j = Math.floor(Math.random() * (i + 1));
+      copy[i] = copy[j];
+      copy[j] = swap;
+    }
+    return copy;
+  }
+
+  function refillUpcoming() {
+    const rest = availableIndices().filter((item) => item !== index && !heard.has(item));
+    upcoming = shuffle ? shuffledCopy(rest) : [];
+    played = index >= 0 ? [index] : [];
+  }
+
+  function playAt(nextIndex, keepHistory) {
     const file = files[nextIndex];
     if (!file || !file.available) return;
+    heard.add(nextIndex);
+    if (shuffle && !keepHistory) {
+      upcoming = upcoming.filter((item) => item !== nextIndex);
+      if (!played.length || played[played.length - 1] !== nextIndex) played.push(nextIndex);
+    }
     index = nextIndex;
     slider.value = "0";
     paint();
@@ -410,6 +444,14 @@ function mountAlbum(files, path, playId) {
   });
   play.addEventListener("click", () => {
     if (index < 0) {
+      if (shuffle) {
+        const order = upcoming.length ? upcoming.slice() : shuffledCopy(availableIndices());
+        if (!order.length) return;
+        upcoming = order.slice(1);
+        played = [];
+        playAt(order[0]);
+        return;
+      }
       const first = files.findIndex((file) => file.available);
       if (first >= 0) playAt(first);
       return;
@@ -426,10 +468,23 @@ function mountAlbum(files, path, playId) {
       node.currentTime = 0;
       return;
     }
+    if (shuffle) {
+      if (played.length > 1) {
+        upcoming.unshift(index);
+        played.pop();
+        playAt(played[played.length - 1], true);
+      }
+      return;
+    }
     const target = neighbor(-1);
     if (target >= 0) playAt(target);
   });
   next.addEventListener("click", () => {
+    if (shuffle) {
+      if (upcoming.length) playAt(upcoming.shift());
+      else if (index < 0) play.click();
+      return;
+    }
     const target = neighbor(1);
     if (target >= 0) playAt(target);
     else if (index < 0) play.click();
@@ -444,6 +499,11 @@ function mountAlbum(files, path, playId) {
     time.textContent = `${formatDuration(current)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
   });
   node.addEventListener("ended", () => {
+    if (shuffle) {
+      if (upcoming.length) playAt(upcoming.shift());
+      else setIcon(play, "play", "Слушать");
+      return;
+    }
     const target = neighbor(1);
     if (target >= 0) playAt(target);
     else setIcon(play, "play", "Слушать");
@@ -460,16 +520,33 @@ function mountAlbum(files, path, playId) {
     if (index < 0) return;
     node.currentTime = Number(slider.value) || 0;
   });
+  const mix = document.createElement("button");
+  mix.type = "button";
+  setIcon(mix, "shuffle", "Случайный порядок");
+  mix.setAttribute("aria-pressed", shuffle ? "true" : "false");
+  mix.classList.toggle("on", shuffle);
+  mix.addEventListener("click", () => {
+    shuffle = !shuffle;
+    localStorage.setItem("archive-shuffle", shuffle ? "1" : "0");
+    mix.setAttribute("aria-pressed", shuffle ? "true" : "false");
+    mix.classList.toggle("on", shuffle);
+    refillUpcoming();
+  });
   const tail = document.createElement("span");
   tail.className = "tail";
   tail.setAttribute("aria-hidden", "true");
-  controls.append(previous, play, next, slider, time, tail, ...sound);
+  controls.append(previous, play, next, mix, slider, time, tail, ...sound);
   const list = document.createElement("div");
   list.className = "playlist";
   list.append(...buttons);
   section.append(heading, now, node, controls, list);
   const start = files.findIndex((file) => String(file.id) === String(playId));
-  if (start >= 0) playAt(start);
+  if (start >= 0) {
+    if (shuffle) upcoming = shuffledCopy(availableIndices().filter((item) => item !== start));
+    playAt(start);
+  } else if (shuffle) {
+    upcoming = shuffledCopy(availableIndices());
+  }
   return section;
 }
 
@@ -540,6 +617,7 @@ function iconSvg(name) {
     muted: '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM3 9v6h4l5 5v-6.73l-9-9L4.27 3 3 4.27 7.73 9H3zm9-5-2.09 2.09L12 8.18V4z"/>',
     fullscreen: '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>',
     exit: '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>',
+    shuffle: '<path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
 }

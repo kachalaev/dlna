@@ -416,6 +416,11 @@ h2 {
   color: var(--accent);
 }
 
+.album .controls button.icon.on,
+.album .controls button.icon.on:hover {
+  color: var(--accent);
+}
+
 .album .playlist { margin-top: 0.4rem; }
 
 .album .playlist .current .name { color: var(--accent); }
