@@ -461,14 +461,6 @@ function bootPlayer() {
   section.className = "album";
   const heading = document.createElement("h2");
   heading.textContent = "Плейлист";
-  const clear = document.createElement("button");
-  clear.type = "button";
-  clear.className = "text-btn";
-  clear.textContent = "Очистить";
-  clear.addEventListener("click", () => clearPlaylist());
-  const head = document.createElement("div");
-  head.className = "album-head";
-  head.append(heading, clear);
   const now = document.createElement("p");
   now.className = "now";
   now.textContent = "Выберите запись";
@@ -747,13 +739,18 @@ function bootPlayer() {
   const tail = document.createElement("span");
   tail.className = "tail";
   tail.setAttribute("aria-hidden", "true");
-  controls.append(previous, play, next, mix, slider, time, tail, ...sound);
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "text-btn clear";
+  clear.textContent = "Очистить";
+  clear.addEventListener("click", () => clearPlaylist());
+  controls.append(previous, play, next, mix, slider, time, tail, ...sound, clear);
   const close = document.createElement("button");
   close.type = "button";
   close.className = "dock-close";
   setIcon(close, "close", "Очистить плейлист");
   close.addEventListener("click", () => clearPlaylist());
-  section.append(close, head, now, node, controls, list);
+  section.append(close, heading, now, node, controls, list);
   dock.append(section);
   paintPlaylist = paint;
   clearPlaylist = () => {

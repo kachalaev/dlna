@@ -384,6 +384,14 @@ h2 {
   min-width: 0.5rem;
 }
 
+.album .controls .clear {
+  margin-left: auto;
+  flex: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+}
+
 .album .controls input[type="range"]:not(.volume) {
   order: -1;
   flex: 1 0 100%;
@@ -496,16 +504,13 @@ body.has-dock .wrap {
   margin: 0;
 }
 
-.dock .album-head,
 .dock .album h2,
 .dock .album .now,
 .dock .album .controls { flex: none; }
 
-.dock .album-head { padding-right: 1.8rem; }
-
 .dock .album h2 {
   font-size: 1.35rem;
-  padding-right: 0;
+  padding-right: 2.2rem;
 }
 
 .dock .playlist {
