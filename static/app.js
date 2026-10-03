@@ -541,9 +541,10 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     wakeControls();
   });
   bindFullscreen(stage, node, fullscreen);
-  controls.append(play, slider, time, ...sound);
   if (previous) controls.append(previous);
+  controls.append(play);
   if (next) controls.append(next);
+  controls.append(slider, time, ...sound);
   const tracks = audioSelect(video, (index) => {
     audio = index;
     if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
