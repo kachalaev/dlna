@@ -858,6 +858,17 @@ function volumeControls(node) {
     saveSound(level, next === 0);
     paint();
   });
+  slider.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const notch = event.deltaMode === 1 ? event.deltaY * 0.05 : event.deltaY / 100 * 0.05;
+    const current = node.muted ? 0 : node.volume;
+    const next = Math.min(1, Math.max(0, current - notch));
+    if (next > 0) level = next;
+    node.volume = next > 0 ? next : level;
+    node.muted = next === 0;
+    saveSound(level, next === 0);
+    paint();
+  }, { passive: false });
   paint();
   return [mute, slider];
 }
