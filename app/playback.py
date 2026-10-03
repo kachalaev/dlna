@@ -5,14 +5,30 @@ from pathlib import Path
 
 
 _QUALITY_STEPS = (360, 480, 720, 1080, 1440, 2160)
+_AUDIO_TYPES = {
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "aac": "audio/aac",
+    "wav": "audio/wav",
+    "flac": "audio/flac",
+    "ogg": "audio/ogg",
+    "opus": "audio/ogg",
+}
+AUDIO_EXTENSIONS = frozenset(_AUDIO_TYPES)
 
 
 def playback_kind(ext: str) -> str:
+    if ext in AUDIO_EXTENSIONS:
+        return "audio"
     if ext == "mp4":
         return "direct"
     if ext in {"mkv", "avi"}:
         return "remux"
     return "none"
+
+
+def audio_media_type(ext: str) -> str:
+    return _AUDIO_TYPES.get(ext, "application/octet-stream")
 
 
 def quality_options(source_height) -> list:

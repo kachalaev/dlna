@@ -84,6 +84,8 @@ def audio_tracks(raw) -> list[dict]:
 def public_video(row: dict, mounted: set[str]) -> dict:
     rel_path = row["rel_path"]
     folder = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+    kind = playback_kind(row["ext"])
+    qualities = [] if kind == "audio" else list(reversed(quality_options(row.get("height"))))
     return {
         "id": row["id"],
         "name": row["name"],
@@ -99,8 +101,8 @@ def public_video(row: dict, mounted: set[str]) -> dict:
         "audio_codec": row["audio_codec"],
         "audio_tracks": audio_tracks(row.get("audio_tracks")),
         "available": row["volume_name"] in mounted,
-        "playback": playback_kind(row["ext"]),
-        "qualities": list(reversed(quality_options(row.get("height")))),
+        "playback": kind,
+        "qualities": qualities,
     }
 
 

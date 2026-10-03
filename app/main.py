@@ -20,6 +20,7 @@ from app.db import Catalog
 from app.listing import build_listing, normalize_folder, public_video, search_videos
 from app.hls import HlsHub
 from app.playback import (
+    audio_media_type,
     chosen_height,
     ffmpeg_hls_command,
     ffmpeg_remux_command,
@@ -149,6 +150,12 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         media = Path(row["abs_path"])
         if not path_inside(Path(volume.path), media):
             raise HTTPException(status_code=404, detail="Файл сейчас недоступен")
+        if kind == "audio":
+            return FileResponse(
+                media,
+                media_type=audio_media_type(row["ext"]),
+                headers={"Cache-Control": "no-store"},
+            )
         if serve_original(kind, a, row["height"], h):
             return FileResponse(
                 media,
@@ -177,7 +184,8 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
         h: Optional[int] = Query(None),
     ):
         row, media = _playable_row(video_id)
-        if serve_original(playback_kind(row["ext"]), a, row["height"], h):
+        kind = playback_kind(row["ext"])
+        if kind == "audio" or serve_original(kind, a, row["height"], h):
             raise HTTPException(status_code=404, detail="Для этого файла поток HLS не нужен")
         audio, start = _audio_and_start(a, t, row["duration"])
         height = chosen_height(row["height"], h)

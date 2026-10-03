@@ -8,11 +8,13 @@ from pathlib import Path
 
 from app.config import Volume
 from app.db import Catalog
+from app.playback import AUDIO_EXTENSIONS
 from app.probe import EMPTY_PROBE
 
 logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = frozenset({"mp4", "mkv", "avi"})
+_MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 _DISK_ERRNOS = frozenset({5, 6, 19, 60})
 # Служебные папки Windows на exFAT. В них нет фильмов, а чтение даёт ошибку доступа.
 _SKIP_DIRS = frozenset({"system volume information", "$recycle.bin", "recycler"})
@@ -50,7 +52,7 @@ def _walk_tree(root: Path, onerror) -> tuple[list[tuple[Path, os.stat_result]], 
                 continue
             if not stat.S_ISREG(info.st_mode):
                 continue
-            if full.suffix.lower().lstrip(".") not in VIDEO_EXTENSIONS:
+            if full.suffix.lower().lstrip(".") not in _MEDIA_EXTENSIONS:
                 continue
             found.append((full, info))
     return found, directories

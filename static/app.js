@@ -17,13 +17,20 @@ function readRoute() {
   const match = location.pathname.match(/^\/watch\/(\d+)$/);
   if (match) return { watchId: Number(match[1]) };
   const params = new URLSearchParams(location.search);
-  return { folder: params.get("path") || "", q: params.get("q") || "" };
+  return {
+    folder: params.get("path") || "",
+    q: params.get("q") || "",
+    play: params.get("play") || "",
+  };
 }
 
-function navigateListing({ folder = "", q = "" } = {}) {
+function navigateListing({ folder = "", q = "", play = "" } = {}) {
   const url = new URL("/", location.origin);
   if (q) url.searchParams.set("q", q);
-  else if (folder) url.searchParams.set("path", folder);
+  else {
+    if (folder) url.searchParams.set("path", folder);
+    if (play) url.searchParams.set("play", play);
+  }
   history.pushState({}, "", url);
   render();
 }
@@ -275,7 +282,10 @@ function fileRow(file) {
   if (!file.available) bits.push("недоступен");
   meta.textContent = bits.join(" · ");
   button.append(name, meta);
-  button.addEventListener("click", () => showWatch(file.id));
+  button.addEventListener("click", () => {
+    if (file.playback === "audio") navigateListing({ folder: file.folder, play: String(file.id) });
+    else showWatch(file.id);
+  });
   return button;
 }
 
@@ -294,10 +304,10 @@ function folderRow(folder) {
   return button;
 }
 
-async function renderListing(folder, query) {
+async function renderListing(folder, query, play) {
   const gen = renderGen;
   try {
-    await renderListingBody(folder, query, gen);
+    await renderListingBody(folder, query, gen, play);
   } catch (error) {
     if (gen !== renderGen) return;
     crumbsEl.hidden = true;
@@ -305,7 +315,165 @@ async function renderListing(folder, query) {
   }
 }
 
-async function renderListingBody(folder, query, gen) {
+function trackTitle(file) {
+  return file.name.replace(/\.[^.]+$/, "");
+}
+
+function mountAlbum(files, path, playId) {
+  const section = document.createElement("section");
+  section.className = "album";
+  const heading = document.createElement("h2");
+  heading.textContent = path ? path.split("/").pop() : "Альбом";
+  const now = document.createElement("p");
+  now.className = "now";
+  now.textContent = "Выберите запись";
+  const node = document.createElement("audio");
+  node.preload = "none";
+  const sound = volumeControls(node);
+  const controls = document.createElement("div");
+  controls.className = "controls";
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "play";
+  setIcon(play, "play", "Слушать");
+  const previous = document.createElement("button");
+  previous.type = "button";
+  setIcon(previous, "previous", "Предыдущая запись");
+  const next = document.createElement("button");
+  next.type = "button";
+  setIcon(next, "next", "Следующая запись");
+  const time = document.createElement("span");
+  time.textContent = "0:00";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "0";
+  slider.step = "1";
+  slider.value = "0";
+  slider.disabled = true;
+  slider.setAttribute("aria-label", "Позиция");
+  let index = -1;
+  let scrubbing = false;
+  const buttons = files.map((file) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = file.available ? "row" : "row unavailable";
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = trackTitle(file);
+    const meta = document.createElement("span");
+    meta.className = "row-meta";
+    const bits = [file.ext.toUpperCase()];
+    const duration = formatDuration(file.duration);
+    if (duration) bits.push(duration);
+    if (!file.available) bits.push("недоступен");
+    meta.textContent = bits.join(" · ");
+    button.append(name, meta);
+    return button;
+  });
+
+  function paint() {
+    const file = files[index];
+    now.textContent = file ? trackTitle(file) : "Выберите запись";
+    buttons.forEach((button, item) => button.classList.toggle("current", item === index));
+    const duration = file && file.duration ? file.duration : node.duration;
+    const known = Number.isFinite(duration) && duration > 0;
+    slider.disabled = !known;
+    if (known) slider.max = String(Math.floor(duration));
+  }
+
+  function playAt(nextIndex) {
+    const file = files[nextIndex];
+    if (!file || !file.available) return;
+    index = nextIndex;
+    slider.value = "0";
+    paint();
+    const url = new URL(location.href);
+    url.searchParams.set("play", String(file.id));
+    history.replaceState({}, "", url);
+    node.src = `/api/videos/${file.id}/stream`;
+    node.play().then(() => setIcon(play, "pause", "Пауза")).catch(() => setIcon(play, "play", "Слушать"));
+  }
+
+  function neighbor(delta) {
+    for (let item = index + delta; item >= 0 && item < files.length; item += delta) {
+      if (files[item].available) return item;
+    }
+    return -1;
+  }
+
+  buttons.forEach((button, item) => {
+    button.addEventListener("click", () => {
+      if (!files[item].available) return;
+      if (item === index) play.click();
+      else playAt(item);
+    });
+  });
+  play.addEventListener("click", () => {
+    if (index < 0) {
+      const first = files.findIndex((file) => file.available);
+      if (first >= 0) playAt(first);
+      return;
+    }
+    if (!node.getAttribute("src")) {
+      playAt(index);
+      return;
+    }
+    if (node.paused) node.play().catch(() => {});
+    else node.pause();
+  });
+  previous.addEventListener("click", () => {
+    if (index >= 0 && node.currentTime > 3) {
+      node.currentTime = 0;
+      return;
+    }
+    const target = neighbor(-1);
+    if (target >= 0) playAt(target);
+  });
+  next.addEventListener("click", () => {
+    const target = neighbor(1);
+    if (target >= 0) playAt(target);
+    else if (index < 0) play.click();
+  });
+  node.addEventListener("play", () => setIcon(play, "pause", "Пауза"));
+  node.addEventListener("pause", () => setIcon(play, "play", "Слушать"));
+  node.addEventListener("loadedmetadata", paint);
+  node.addEventListener("timeupdate", () => {
+    const current = node.currentTime || 0;
+    const duration = Number.isFinite(node.duration) ? node.duration : (files[index] && files[index].duration) || 0;
+    if (!scrubbing && duration) slider.value = String(Math.min(duration, current));
+    time.textContent = `${formatDuration(current)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
+  });
+  node.addEventListener("ended", () => {
+    const target = neighbor(1);
+    if (target >= 0) playAt(target);
+    else setIcon(play, "play", "Слушать");
+  });
+  node.addEventListener("error", () => {
+    now.textContent = "Не удалось воспроизвести запись";
+    setIcon(play, "play", "Слушать");
+  });
+  slider.addEventListener("pointerdown", () => {
+    scrubbing = true;
+  });
+  slider.addEventListener("change", () => {
+    scrubbing = false;
+    if (index < 0) return;
+    node.currentTime = Number(slider.value) || 0;
+  });
+  const tail = document.createElement("span");
+  tail.className = "tail";
+  tail.setAttribute("aria-hidden", "true");
+  controls.append(previous, play, next, slider, time, tail, ...sound);
+  const list = document.createElement("div");
+  list.className = "playlist";
+  list.append(...buttons);
+  section.append(heading, now, node, controls, list);
+  const start = files.findIndex((file) => String(file.id) === String(playId));
+  if (start >= 0) playAt(start);
+  return section;
+}
+
+async function renderListingBody(folder, query, gen, play) {
   if (query) {
     crumbsEl.hidden = true;
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
@@ -320,10 +488,16 @@ async function renderListingBody(folder, query, gen) {
   const data = await api(`/api/browse?path=${encodeURIComponent(folder)}`);
   if (gen !== renderGen) return;
   renderCrumbs(data.path);
-  const nodes = [...data.folders.map(folderRow), ...data.files.map(fileRow)];
+  const audios = data.files
+    .filter((file) => file.playback === "audio")
+    .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true, sensitivity: "base" }));
+  const videos = data.files.filter((file) => file.playback !== "audio");
+  const nodes = [];
+  if (audios.length) nodes.push(mountAlbum(audios, data.path, play));
+  nodes.push(...data.folders.map(folderRow), ...videos.map(fileRow));
   if (!nodes.length) {
     const scanning = statusEl.textContent.startsWith("Идёт обновление");
-    nodes.push(note(scanning ? "Каталог обновляется. Файлы появятся по мере обхода." : "В этой папке нет видео."));
+    nodes.push(note(scanning ? "Каталог обновляется. Файлы появятся по мере обхода." : "В этой папке пусто."));
   }
   listingEl.replaceChildren(...nodes);
 }
@@ -669,6 +843,14 @@ async function renderPlayer(id, { autoplay = false, resume = true } = {}) {
     return;
   }
   if (gen !== renderGen) return;
+  if (video.playback === "audio") {
+    const url = new URL("/", location.origin);
+    if (video.folder) url.searchParams.set("path", video.folder);
+    url.searchParams.set("play", String(video.id));
+    history.replaceState({}, "", url);
+    render();
+    return;
+  }
   playerEl.replaceChildren();
   const back = document.createElement("button");
   back.type = "button";
@@ -772,7 +954,7 @@ async function render({ autoplay = false, resume = true } = {}) {
   listingEl.hidden = false;
   paintResume();
   if (gen !== renderGen) return;
-  await renderListing(route.folder, route.q);
+  await renderListing(route.folder, route.q, route.play);
 }
 
 async function refreshStatus() {
@@ -827,7 +1009,20 @@ function onPlayerKey(event) {
     if (!outsideField) stage.wake();
   }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
-  if (playerEl.hidden) return;
+  if (playerEl.hidden) {
+    const album = listingEl.querySelector(".album");
+    if (!album || listingEl.hidden) return;
+    const field = event.target;
+    const fieldTag = field && field.tagName;
+    if (fieldTag === "INPUT" || fieldTag === "TEXTAREA" || fieldTag === "SELECT" || (field && field.isContentEditable)) return;
+    if (event.key === " ") {
+      if (event.repeat || (field && field.closest && field.closest("button"))) return;
+      event.preventDefault();
+      const albumPlay = album.querySelector(".controls .play");
+      if (albumPlay) albumPlay.click();
+    }
+    return;
+  }
   const target = event.target;
   const tag = target && target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;

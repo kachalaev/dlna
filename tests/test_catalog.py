@@ -270,10 +270,39 @@ def test_audio_track_labels(tmp_path: Path):
         assert tracks[1]["label"] == "Commentary · Английский · AAC"
 
 
+def test_audio_album_is_served(tmp_path: Path):
+    root = tmp_path / "lib2"
+    touch(root / "Music" / "Album" / "02-second.mp3", b"mp3-bytes")
+    touch(root / "Music" / "Album" / "01-first.flac", b"flac")
+    touch(root / "Music" / "notes.txt", b"nope")
+    app = make_app(tmp_path, [Volume("lib2", str(root))])
+    app.state.scanner.scan()
+    with TestClient(app) as client:
+        music = client.get("/api/browse", params={"path": "Music"}).json()
+        assert [item["name"] for item in music["folders"]] == ["Album"]
+        assert music["files"] == []
+        album = client.get("/api/browse", params={"path": "Music/Album"}).json()
+        assert [item["name"] for item in album["files"]] == ["01-first.flac", "02-second.mp3"]
+        assert {item["playback"] for item in album["files"]} == {"audio"}
+        assert album["files"][0]["qualities"] == []
+        track = album["files"][1]
+        direct = client.get(f"/api/videos/{track['id']}/stream", headers={"Range": "bytes=0-2"})
+        assert direct.status_code == 206
+        assert direct.content == b"mp3"
+        assert direct.headers["content-type"].startswith("audio/mpeg")
+        missing = client.get(f"/api/videos/{track['id']}/hls.m3u8")
+        assert missing.status_code == 404
+        found = client.get("/api/search", params={"q": "second"}).json()["files"]
+        assert found[0]["folder"] == "Music/Album"
+        assert found[0]["playback"] == "audio"
+
+
 def test_playback_helpers():
     assert playback_kind("mp4") == "direct"
     assert playback_kind("mkv") == "remux"
     assert playback_kind("avi") == "remux"
+    assert playback_kind("mp3") == "audio"
+    assert playback_kind("flac") == "audio"
     assert quality_options(1080) == [360, 480, 720, 1080]
     assert quality_options(2160) == [360, 480, 720, 1080, 1440, 2160]
     assert quality_options(800) == [360, 480, 720, 800]

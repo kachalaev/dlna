@@ -353,6 +353,73 @@ h2 {
 
 .note { margin-top: 1rem; }
 
+.album {
+  position: relative;
+  margin: 0.2rem 0 1.4rem;
+}
+
+.album h2 { margin-top: 0; }
+
+.album .now {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.album audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.album .controls {
+  margin-top: 0.7rem;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+}
+
+.album .controls .tail {
+  flex: 1 1 auto;
+  min-width: 0.5rem;
+}
+
+.album .controls input[type="range"]:not(.volume) {
+  order: -1;
+  flex: 1 0 100%;
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--ink);
+}
+
+.album .controls button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.album .controls button.icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
+  display: block;
+}
+
+.album .controls button.icon:hover {
+  border: 0;
+  color: var(--accent);
+}
+
+.album .playlist { margin-top: 0.4rem; }
+
+.album .playlist .current .name { color: var(--accent); }
+
 @media (min-width: 720px) {
   .row {
     flex-direction: row;
