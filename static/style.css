@@ -425,6 +425,57 @@ h2 {
 
 .album .playlist .current .name { color: var(--accent); }
 
+.album .dock-close { display: none; }
+
+.dock {
+  position: fixed;
+  z-index: 4;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(70vh, 34rem);
+  overflow: auto;
+  padding: 0.85rem 0.9rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.dock[hidden] { display: none; }
+
+.dock .album { margin: 0; }
+
+.dock .album h2 {
+  font-size: 1.15rem;
+  padding-right: 2.2rem;
+}
+
+.dock .playlist {
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.dock .dock-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.dock .dock-close svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
+  display: block;
+}
+
 @media (min-width: 720px) {
   .row {
     flex-direction: row;

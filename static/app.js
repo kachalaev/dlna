@@ -5,6 +5,9 @@ const nativeHls = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
 const listingEl = document.querySelector("#listing");
 const playerEl = document.querySelector("#player");
+const dock = document.querySelector("#dock");
+let albumNode = null;
+let albumPath = null;
 const crumbsEl = document.querySelector("#crumbs");
 const statusEl = document.querySelector("#status");
 const searchEl = document.querySelector("#search");
@@ -319,9 +322,70 @@ function trackTitle(file) {
   return file.name.replace(/\.[^.]+$/, "");
 }
 
+function adoptAlbum(section) {
+  if (albumNode === section) {
+    albumPath = section.dataset.path || "";
+    return;
+  }
+  if (albumNode) {
+    const old = albumNode.querySelector("audio");
+    if (old) {
+      old.pause();
+      old.removeAttribute("src");
+    }
+    albumNode.remove();
+  }
+  albumNode = section;
+  albumPath = section.dataset.path || "";
+  if (!dock.contains(section)) dock.hidden = true;
+}
+
+function parkAlbum() {
+  if (!albumNode) {
+    dock.hidden = true;
+    return;
+  }
+  const audio = albumNode.querySelector("audio");
+  if (!audio || !audio.getAttribute("src")) {
+    dock.hidden = true;
+    return;
+  }
+  if (!dock.contains(albumNode)) dock.append(albumNode);
+  dock.hidden = false;
+}
+
+function dismissDock() {
+  const section = albumNode;
+  albumNode = null;
+  albumPath = null;
+  dock.hidden = true;
+  if (!section) return;
+  const audio = section.querySelector("audio");
+  if (audio) {
+    audio.pause();
+    audio.removeAttribute("src");
+  }
+  section.remove();
+}
+
+function takeAlbum(files, path, playId) {
+  if (albumNode && albumPath === (path || "")) {
+    if (playId && albumNode.dataset.track !== String(playId) && albumNode.playTrack) {
+      albumNode.playTrack(playId);
+    }
+    return albumNode;
+  }
+  return mountAlbum(files, path, playId);
+}
+
 function mountAlbum(files, path, playId) {
   const section = document.createElement("section");
   section.className = "album";
+  section.dataset.path = path || "";
+  section.playTrack = (id) => {
+    const item = files.findIndex((file) => String(file.id) === String(id));
+    if (item >= 0) playAt(item);
+  };
   const heading = document.createElement("h2");
   heading.textContent = path ? path.split("/").pop() : "Альбом";
   const now = document.createElement("p");
@@ -421,9 +485,13 @@ function mountAlbum(files, path, playId) {
     index = nextIndex;
     slider.value = "0";
     paint();
-    const url = new URL(location.href);
-    url.searchParams.set("play", String(file.id));
-    history.replaceState({}, "", url);
+    section.dataset.track = String(file.id);
+    const route = readRoute();
+    if (!route.watchId && !route.q && (route.folder || "") === (path || "")) {
+      const url = new URL(location.href);
+      url.searchParams.set("play", String(file.id));
+      history.replaceState({}, "", url);
+    }
     node.src = `/api/videos/${file.id}/stream`;
     node.play().then(() => setIcon(play, "pause", "Пауза")).catch(() => setIcon(play, "play", "Слушать"));
   }
@@ -489,7 +557,10 @@ function mountAlbum(files, path, playId) {
     if (target >= 0) playAt(target);
     else if (index < 0) play.click();
   });
-  node.addEventListener("play", () => setIcon(play, "pause", "Пауза"));
+  node.addEventListener("play", () => {
+    setIcon(play, "pause", "Пауза");
+    adoptAlbum(section);
+  });
   node.addEventListener("pause", () => setIcon(play, "play", "Слушать"));
   node.addEventListener("loadedmetadata", paint);
   node.addEventListener("timeupdate", () => {
@@ -539,7 +610,12 @@ function mountAlbum(files, path, playId) {
   const list = document.createElement("div");
   list.className = "playlist";
   list.append(...buttons);
-  section.append(heading, now, node, controls, list);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "dock-close";
+  setIcon(close, "close", "Закрыть плеер");
+  close.addEventListener("click", dismissDock);
+  section.append(close, heading, now, node, controls, list);
   const start = files.findIndex((file) => String(file.id) === String(playId));
   if (start >= 0) {
     if (shuffle) upcoming = shuffledCopy(availableIndices().filter((item) => item !== start));
@@ -551,6 +627,7 @@ function mountAlbum(files, path, playId) {
 }
 
 async function renderListingBody(folder, query, gen, play) {
+  parkAlbum();
   if (query) {
     crumbsEl.hidden = true;
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
@@ -570,13 +647,14 @@ async function renderListingBody(folder, query, gen, play) {
     .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true, sensitivity: "base" }));
   const videos = data.files.filter((file) => file.playback !== "audio");
   const nodes = [];
-  if (audios.length) nodes.push(mountAlbum(audios, data.path, play));
+  if (audios.length) nodes.push(takeAlbum(audios, data.path, play));
   nodes.push(...data.folders.map(folderRow), ...videos.map(fileRow));
   if (!nodes.length) {
     const scanning = statusEl.textContent.startsWith("Идёт обновление");
     nodes.push(note(scanning ? "Каталог обновляется. Файлы появятся по мере обхода." : "В этой папке пусто."));
   }
   listingEl.replaceChildren(...nodes);
+  if (albumNode && listingEl.contains(albumNode)) dock.hidden = true;
 }
 
 const VOLUME_KEY = "archive-volume";
@@ -617,6 +695,7 @@ function iconSvg(name) {
     muted: '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM3 9v6h4l5 5v-6.73l-9-9L4.27 3 3 4.27 7.73 9H3zm9-5-2.09 2.09L12 8.18V4z"/>',
     fullscreen: '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>',
     exit: '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>',
+    close: '<path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6z"/>',
     shuffle: '<path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
@@ -1020,6 +1099,7 @@ async function render({ autoplay = false, resume = true } = {}) {
   const route = readRoute();
   searchEl.value = route.q || "";
   if (route.watchId) {
+    parkAlbum();
     listingEl.hidden = true;
     crumbsEl.hidden = true;
     playerEl.hidden = false;
@@ -1088,8 +1168,8 @@ function onPlayerKey(event) {
   }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   if (playerEl.hidden) {
-    const album = listingEl.querySelector(".album");
-    if (!album || listingEl.hidden) return;
+    const album = (!dock.hidden && dock.querySelector(".album")) || (!listingEl.hidden && listingEl.querySelector(".album"));
+    if (!album) return;
     const field = event.target;
     const fieldTag = field && field.tagName;
     if (fieldTag === "INPUT" || fieldTag === "TEXTAREA" || fieldTag === "SELECT" || (field && field.isContentEditable)) return;
