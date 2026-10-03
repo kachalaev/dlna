@@ -461,6 +461,14 @@ function bootPlayer() {
   section.className = "album";
   const heading = document.createElement("h2");
   heading.textContent = "Плейлист";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "text-btn";
+  clear.textContent = "Очистить";
+  clear.addEventListener("click", () => clearPlaylist());
+  const head = document.createElement("div");
+  head.className = "album-head";
+  head.append(heading, clear);
   const now = document.createElement("p");
   now.className = "now";
   now.textContent = "Выберите запись";
@@ -552,8 +560,39 @@ function bootPlayer() {
       const from = Number(event.dataTransfer.getData("text/plain"));
       if (Number.isFinite(from)) moveTrack(from, item);
     });
-    row.append(pos, name, meta);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove";
+    setIcon(remove, "close", "Убрать из плейлиста");
+    remove.addEventListener("click", () => removeTrack(item));
+    row.append(pos, name, meta, remove);
     return row;
+  }
+
+  function removeTrack(item) {
+    if (item < 0 || item >= playlist.length) return;
+    const currentId = index >= 0 && playlist[index] ? playlist[index].id : null;
+    const removed = playlist[item];
+    heard.delete(removed.id);
+    const upcomingIds = upcoming.map((slot) => playlist[slot] && playlist[slot].id).filter((id) => id != null && id !== removed.id);
+    const playedIds = played.map((slot) => playlist[slot] && playlist[slot].id).filter((id) => id != null && id !== removed.id);
+    playlist.splice(item, 1);
+    if (!playlist.length) {
+      clearPlaylist();
+      return;
+    }
+    const locate = (id) => playlist.findIndex((track) => track.id === id);
+    upcoming = upcomingIds.map(locate).filter((slot) => slot >= 0);
+    played = playedIds.map(locate).filter((slot) => slot >= 0);
+    savePlaylist();
+    markPlaylistButtons();
+    if (removed.id === currentId) {
+      index = -1;
+      playAt(Math.min(item, playlist.length - 1));
+      return;
+    }
+    index = locate(currentId);
+    paint();
   }
 
   function moveTrack(from, to) {
@@ -714,7 +753,7 @@ function bootPlayer() {
   close.className = "dock-close";
   setIcon(close, "close", "Очистить плейлист");
   close.addEventListener("click", () => clearPlaylist());
-  section.append(close, heading, now, node, controls, list);
+  section.append(close, head, now, node, controls, list);
   dock.append(section);
   paintPlaylist = paint;
   clearPlaylist = () => {

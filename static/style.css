@@ -496,13 +496,16 @@ body.has-dock .wrap {
   margin: 0;
 }
 
+.dock .album-head,
 .dock .album h2,
 .dock .album .now,
 .dock .album .controls { flex: none; }
 
+.dock .album-head { padding-right: 1.8rem; }
+
 .dock .album h2 {
   font-size: 1.35rem;
-  padding-right: 2.2rem;
+  padding-right: 0;
 }
 
 .dock .playlist {
@@ -526,6 +529,28 @@ body.has-dock .wrap {
   color: var(--muted);
   text-align: right;
 }
+
+.dock .playlist .remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.dock .playlist .remove svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: currentColor;
+  display: block;
+}
+
+.dock .playlist .remove:hover { color: var(--accent); }
 
 .dock .playlist .name {
   flex: 1;
