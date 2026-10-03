@@ -486,13 +486,40 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   fullscreen.type = "button";
   fullscreen.textContent = "На весь экран";
   const stage = document.createElement("div");
-  stage.className = "stage paused";
+  stage.className = "stage paused awake";
+  let controlsTimer = 0;
+  let pointerDown = false;
+  function wakeControls() {
+    stage.classList.add("awake");
+    window.clearTimeout(controlsTimer);
+    if (pointerDown || node.paused || !node.getAttribute("src")) return;
+    controlsTimer = window.setTimeout(() => {
+      if (!stage.isConnected || pointerDown) return;
+      stage.classList.remove("awake");
+    }, 5000);
+  }
+  stage.wake = wakeControls;
   function showControls() {
-    stage.classList.toggle("paused", node.paused || !node.getAttribute("src"));
+    const paused = node.paused || !node.getAttribute("src");
+    stage.classList.toggle("paused", paused);
+    wakeControls();
   }
   node.addEventListener("play", showControls);
   node.addEventListener("pause", showControls);
   node.addEventListener("click", () => play.click());
+  stage.addEventListener("pointermove", wakeControls);
+  stage.addEventListener("pointerdown", () => {
+    pointerDown = true;
+    wakeControls();
+  });
+  stage.addEventListener("pointerup", () => {
+    pointerDown = false;
+    wakeControls();
+  });
+  stage.addEventListener("pointercancel", () => {
+    pointerDown = false;
+    wakeControls();
+  });
   bindFullscreen(stage, node, fullscreen);
   controls.append(play, slider, time, ...sound);
   if (previous) controls.append(previous);
@@ -711,6 +738,12 @@ rescanBtn.addEventListener("click", async () => {
 let seekTimer = 0;
 
 function onPlayerKey(event) {
+  const stage = playerEl.querySelector(".stage");
+  if (stage && !playerEl.hidden && stage.wake) {
+    const tag = event.target && event.target.tagName;
+    const outsideField = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && !stage.contains(event.target);
+    if (!outsideField) stage.wake();
+  }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   if (playerEl.hidden) return;
   const target = event.target;

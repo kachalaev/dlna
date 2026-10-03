@@ -216,11 +216,8 @@ h2 {
   white-space: nowrap;
 }
 
-.stage:hover .controls,
-.stage:focus-within .controls,
-.stage.paused .controls,
-.stage:fullscreen .controls,
-.stage:-webkit-full-screen .controls {
+.stage.awake .controls,
+.stage.paused .controls {
   opacity: 1;
   pointer-events: auto;
 }
