@@ -512,17 +512,6 @@ function bootPlayer() {
   function playlistRow(track, item) {
     const row = document.createElement("div");
     row.className = item === index ? "row current" : "row";
-    const grip = document.createElement("button");
-    grip.type = "button";
-    grip.className = "grip";
-    grip.draggable = true;
-    grip.setAttribute("aria-label", "Перетащить");
-    grip.addEventListener("dragstart", (event) => {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", String(item));
-      row.classList.add("dragging");
-    });
-    grip.addEventListener("dragend", () => row.classList.remove("dragging"));
     const pos = document.createElement("input");
     pos.className = "pos";
     pos.type = "number";
@@ -537,8 +526,23 @@ function bootPlayer() {
     const name = document.createElement("button");
     name.type = "button";
     name.className = "name";
+    name.draggable = true;
     name.textContent = trackTitle(track);
+    let dragged = false;
+    name.addEventListener("dragstart", (event) => {
+      dragged = true;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(item));
+      row.classList.add("dragging");
+    });
+    name.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      window.setTimeout(() => {
+        dragged = false;
+      }, 0);
+    });
     name.addEventListener("click", () => {
+      if (dragged) return;
       if (item === index) play.click();
       else playAt(item);
     });
@@ -556,7 +560,7 @@ function bootPlayer() {
       const from = Number(event.dataTransfer.getData("text/plain"));
       if (Number.isFinite(from)) moveTrack(from, item);
     });
-    row.append(grip, pos, name, meta);
+    row.append(pos, name, meta);
     return row;
   }
 

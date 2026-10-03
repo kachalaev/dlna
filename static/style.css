@@ -520,19 +520,6 @@ body.has-dock .wrap {
   cursor: default;
 }
 
-.dock .playlist .grip {
-  flex: none;
-  width: 1.1rem;
-  height: 1.1rem;
-  padding: 0;
-  border: 0;
-  background:
-    linear-gradient(var(--muted), var(--muted)) center 20% / 100% 2px no-repeat,
-    linear-gradient(var(--muted), var(--muted)) center 50% / 100% 2px no-repeat,
-    linear-gradient(var(--muted), var(--muted)) center 80% / 100% 2px no-repeat;
-  cursor: grab;
-}
-
 .dock .playlist .pos {
   flex: none;
   width: 2.7rem;
