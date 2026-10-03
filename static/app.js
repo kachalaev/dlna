@@ -549,6 +549,10 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     audio = index;
     if (node.getAttribute("src")) start(offset + (node.currentTime || 0));
   });
+  const tail = document.createElement("span");
+  tail.className = "tail";
+  tail.setAttribute("aria-hidden", "true");
+  controls.append(tail);
   if (tracks) controls.append(tracks);
   controls.append(fullscreen);
   stage.append(node, controls);
