@@ -416,6 +416,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   controls.className = "controls";
   const play = document.createElement("button");
   play.type = "button";
+  play.className = "play";
   play.textContent = "Смотреть";
   const time = document.createElement("span");
   time.textContent = formatDuration(0) + (video.duration ? ` / ${formatDuration(video.duration)}` : "");
@@ -697,10 +698,64 @@ rescanBtn.addEventListener("click", async () => {
   rescanBtn.disabled = lastScanning;
 });
 
+let seekTimer = 0;
+
+function onPlayerKey(event) {
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  if (playerEl.hidden) return;
+  const target = event.target;
+  const tag = target && target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;
+  const node = playerEl.querySelector("video");
+  if (!node) return;
+  if (event.key === " ") {
+    if (event.repeat || (target && target.closest && target.closest("button"))) return;
+    event.preventDefault();
+    const play = playerEl.querySelector(".controls .play");
+    if (play) play.click();
+    else if (node.paused) node.play().catch(() => {});
+    else node.pause();
+    return;
+  }
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    const slider = playerEl.querySelector('.controls input[type="range"]:not(.volume)');
+    const delta = event.key === "ArrowLeft" ? -10 : 10;
+    if (slider && !slider.disabled) {
+      const next = Math.min(Number(slider.max), Math.max(0, Number(slider.value) + delta));
+      slider.value = String(next);
+      window.clearTimeout(seekTimer);
+      seekTimer = window.setTimeout(() => {
+        if (slider.isConnected) slider.dispatchEvent(new Event("change"));
+      }, 280);
+      return;
+    }
+    if (Number.isFinite(node.duration)) {
+      node.currentTime = Math.min(node.duration, Math.max(0, (node.currentTime || 0) + delta));
+    }
+    return;
+  }
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  event.preventDefault();
+  const delta = event.key === "ArrowUp" ? 0.1 : -0.1;
+  const slider = playerEl.querySelector("input.volume");
+  const current = node.muted ? 0 : node.volume;
+  const level = Math.min(1, Math.max(0, current + delta));
+  if (slider) {
+    slider.value = String(Math.round(level * 100));
+    slider.dispatchEvent(new Event("input"));
+    return;
+  }
+  node.muted = level === 0;
+  node.volume = level === 0 ? node.volume || savedLevel() : level;
+  saveSound(level === 0 ? node.volume || savedLevel() : level, level === 0);
+}
+
 window.addEventListener("pagehide", rememberNow);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") rememberNow();
 });
+document.addEventListener("keydown", onPlayerKey);
 window.addEventListener("popstate", () => render());
 render();
 refreshStatus();
