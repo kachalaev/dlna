@@ -167,11 +167,62 @@ h2 {
   outline-offset: 3px;
 }
 
-.player video {
+.stage video {
   width: 100%;
+  aspect-ratio: 16 / 9;
   max-height: 72vh;
+  object-fit: contain;
+  background: #000;
+  cursor: pointer;
+}
+
+.stage {
+  position: relative;
   margin-top: 1rem;
   background: var(--screen);
+}
+
+.stage .controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 1.6rem 0.8rem 0.65rem;
+  color: white;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  opacity: 0;
+  pointer-events: none;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+}
+
+.stage .controls input[type="range"]:not(.volume) {
+  order: -1;
+  flex: 1 0 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.stage .controls input.volume {
+  flex: 0 0 4.5rem;
+  width: 4.5rem;
+  min-width: 4.5rem;
+}
+
+.stage .controls span {
+  flex: none;
+  white-space: nowrap;
+}
+
+.stage:hover .controls,
+.stage:focus-within .controls,
+.stage.paused .controls,
+.stage:fullscreen .controls,
+.stage:-webkit-full-screen .controls {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .stage:fullscreen,
@@ -198,26 +249,37 @@ h2 {
   bottom: 0;
   z-index: 1;
   margin: 0;
-  padding: 2.2rem 1rem 1rem;
-  color: white;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  padding: 2.4rem 1rem 1rem;
 }
 
+.stage .controls button,
 .stage:fullscreen .controls button,
 .stage:-webkit-full-screen .controls button {
   color: white;
   border-color: rgba(255, 255, 255, 0.45);
+  padding: 0.28rem 0.5rem;
 }
 
+.stage .controls button:hover,
 .stage:fullscreen .controls button:hover,
 .stage:-webkit-full-screen .controls button:hover {
   color: white;
   border-color: white;
 }
 
+.stage .controls input[type="range"],
 .stage:fullscreen .controls input[type="range"],
 .stage:-webkit-full-screen .controls input[type="range"] {
   accent-color: white;
+}
+
+.stage .controls select {
+  color: white;
+  border-bottom-color: rgba(255, 255, 255, 0.45);
+}
+
+.stage .controls select option {
+  color: #141414;
 }
 
 .controls {

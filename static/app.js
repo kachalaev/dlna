@@ -449,6 +449,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     node.play().catch(() => {});
     play.textContent = "Пауза";
     rememberNow();
+    showControls();
   }
 
   play.addEventListener("click", () => {
@@ -485,7 +486,13 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   fullscreen.type = "button";
   fullscreen.textContent = "На весь экран";
   const stage = document.createElement("div");
-  stage.className = "stage";
+  stage.className = "stage paused";
+  function showControls() {
+    stage.classList.toggle("paused", node.paused || !node.getAttribute("src"));
+  }
+  node.addEventListener("play", showControls);
+  node.addEventListener("pause", showControls);
+  node.addEventListener("click", () => play.click());
   bindFullscreen(stage, node, fullscreen);
   controls.append(play, slider, time, ...sound);
   if (previous) controls.append(previous);
