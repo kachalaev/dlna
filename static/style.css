@@ -249,12 +249,33 @@ h2 {
   padding: 2.4rem 1rem 1rem;
 }
 
-.stage .controls button,
-.stage:fullscreen .controls button,
-.stage:-webkit-full-screen .controls button {
+.stage .controls button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: white;
-  border-color: rgba(255, 255, 255, 0.45);
-  padding: 0.28rem 0.5rem;
+}
+
+.stage .controls button.icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
+  display: block;
+}
+
+.stage .controls button.icon:hover {
+  border: 0;
+  color: white;
+}
+
+.stage:fullscreen .controls .step.icon,
+.stage:-webkit-full-screen .controls .step.icon {
+  display: inline-flex;
 }
 
 .stage .controls button:hover,

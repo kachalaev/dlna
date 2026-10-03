@@ -356,6 +356,26 @@ function applySavedVolume(node) {
   });
 }
 
+function iconSvg(name) {
+  const paths = {
+    play: '<path d="M8 5v14l11-7z"/>',
+    pause: '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>',
+    previous: '<path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>',
+    next: '<path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/>',
+    volume: '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12z"/>',
+    muted: '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM3 9v6h4l5 5v-6.73l-9-9L4.27 3 3 4.27 7.73 9H3zm9-5-2.09 2.09L12 8.18V4z"/>',
+    fullscreen: '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>',
+    exit: '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>',
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
+}
+
+function setIcon(button, name, label) {
+  button.classList.add("icon");
+  button.setAttribute("aria-label", label);
+  button.innerHTML = iconSvg(name);
+}
+
 function volumeControls(node) {
   let level = savedLevel();
   node.volume = level;
@@ -373,7 +393,7 @@ function volumeControls(node) {
   function paint() {
     const audible = !node.muted && node.volume > 0;
     slider.value = String(audible ? Math.round(node.volume * 100) : 0);
-    mute.textContent = audible ? "Без звука" : "Звук";
+    setIcon(mute, audible ? "volume" : "muted", audible ? "Без звука" : "Звук");
   }
 
   mute.addEventListener("click", () => {
@@ -420,7 +440,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   const play = document.createElement("button");
   play.type = "button";
   play.className = "play";
-  play.textContent = "Смотреть";
+  setIcon(play, "play", "Смотреть");
   const time = document.createElement("span");
   time.textContent = formatDuration(0) + (video.duration ? ` / ${formatDuration(video.duration)}` : "");
   const slider = document.createElement("input");
@@ -447,7 +467,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
       ? `/api/videos/${video.id}/hls.m3u8?t=${at.toFixed(3)}&a=${audio}`
       : `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
     node.play().catch(() => {});
-    play.textContent = "Пауза";
+    setIcon(play, "pause", "Пауза");
     rememberNow();
     showControls();
   }
@@ -459,10 +479,10 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     }
     if (node.paused) {
       node.play();
-      play.textContent = "Пауза";
+      setIcon(play, "pause", "Пауза");
     } else {
       node.pause();
-      play.textContent = "Смотреть";
+      setIcon(play, "play", "Смотреть");
     }
   });
   node.addEventListener("timeupdate", () => {
@@ -475,7 +495,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   node.addEventListener("pause", rememberNow);
   node.addEventListener("seeked", rememberNow);
   node.addEventListener("ended", () => {
-    play.textContent = "Смотреть";
+    setIcon(play, "play", "Смотреть");
     playNext(video);
   });
   node.addEventListener("error", () => {
@@ -484,7 +504,7 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
   slider.addEventListener("change", () => start(Number(slider.value) || 0));
   const fullscreen = document.createElement("button");
   fullscreen.type = "button";
-  fullscreen.textContent = "На весь экран";
+  setIcon(fullscreen, "fullscreen", "На весь экран");
   const stage = document.createElement("div");
   stage.className = "stage paused awake";
   let controlsTimer = 0;
@@ -558,7 +578,7 @@ function bindFullscreen(stage, video, button) {
       return;
     }
     const active = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
-    button.textContent = active ? "Обычный размер" : "На весь экран";
+    setIcon(button, active ? "exit" : "fullscreen", active ? "Обычный размер" : "На весь экран");
   };
   button.addEventListener("click", () => {
     const active = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
@@ -661,6 +681,8 @@ async function renderPlayer(id, { autoplay = false, resume = true } = {}) {
   const nextFull = stepButton("Следующее", video, 1);
   previousFull.className = "step";
   nextFull.className = "step";
+  setIcon(previousFull, "previous", "Предыдущее");
+  setIcon(nextFull, "next", "Следующее");
   previous.fullscreenTwin = previousFull;
   next.fullscreenTwin = nextFull;
   previousFull.disabled = previous.disabled;
