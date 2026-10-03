@@ -522,12 +522,9 @@ body.has-dock .wrap {
 
 .dock .playlist .pos {
   flex: none;
-  width: 2.7rem;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
+  width: 1.6rem;
+  color: var(--muted);
   text-align: right;
-  padding: 0;
 }
 
 .dock .playlist .name {

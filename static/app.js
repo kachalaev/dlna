@@ -512,17 +512,9 @@ function bootPlayer() {
   function playlistRow(track, item) {
     const row = document.createElement("div");
     row.className = item === index ? "row current" : "row";
-    const pos = document.createElement("input");
+    const pos = document.createElement("span");
     pos.className = "pos";
-    pos.type = "number";
-    pos.min = "1";
-    pos.max = String(playlist.length);
-    pos.value = String(item + 1);
-    pos.setAttribute("aria-label", `Позиция ${item + 1}`);
-    pos.addEventListener("change", () => {
-      const target = Math.min(playlist.length, Math.max(1, Number(pos.value) || item + 1)) - 1;
-      moveTrack(item, target);
-    });
+    pos.textContent = String(item + 1);
     const name = document.createElement("button");
     name.type = "button";
     name.className = "name";
