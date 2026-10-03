@@ -788,6 +788,8 @@ async function refreshStatus() {
   }
 }
 
+document.querySelector("#home").addEventListener("click", () => navigateListing({}));
+
 document.querySelector("#search-form").addEventListener("submit", (event) => {
   event.preventDefault();
   navigateListing({ q: searchEl.value.trim() });
