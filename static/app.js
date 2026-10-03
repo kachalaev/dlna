@@ -1,3 +1,5 @@
+const nativeHls = document.createElement("video").canPlayType("application/vnd.apple.mpegurl") !== "";
+
 const listingEl = document.querySelector("#listing");
 const playerEl = document.querySelector("#player");
 const crumbsEl = document.querySelector("#crumbs");
@@ -407,6 +409,7 @@ function metaText(video) {
 function mountRemux(video, { autoplay = false, previous = null, next = null, startAt = 0 } = {}) {
   const node = document.createElement("video");
   node.playsInline = true;
+  node.setAttribute("playsinline", "");
   node.preload = "auto";
   const sound = volumeControls(node);
   const controls = document.createElement("div");
@@ -436,7 +439,9 @@ function mountRemux(video, { autoplay = false, previous = null, next = null, sta
     offset = at;
     position = at;
     playing = true;
-    node.src = `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
+    node.src = nativeHls
+      ? `/api/videos/${video.id}/hls.m3u8?t=${at.toFixed(3)}&a=${audio}`
+      : `/api/videos/${video.id}/stream?t=${at.toFixed(3)}&a=${audio}`;
     node.play().catch(() => {});
     play.textContent = "Пауза";
     rememberNow();
@@ -586,6 +591,7 @@ async function renderPlayer(id, { autoplay = false, resume = true } = {}) {
     const node = document.createElement("video");
     node.controls = true;
     node.playsInline = true;
+    node.setAttribute("playsinline", "");
     node.preload = "metadata";
     applySavedVolume(node);
     const startAt = startAtFor(video, resume);

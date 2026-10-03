@@ -6,18 +6,20 @@ import math
 import shutil
 import subprocess
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Config, Volume
 from app.db import Catalog
 from app.listing import build_listing, normalize_folder, public_video, search_videos
-from app.playback import ffmpeg_remux_command, path_inside, playback_kind
+from app.hls import HlsHub
+from app.playback import ffmpeg_hls_command, ffmpeg_remux_command, path_inside, playback_kind, rewrite_hls_playlist
 from app.probe import probe_file
 from app.scanner import Scanner
 
@@ -56,10 +58,12 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
 
     scanner = Scanner(catalog, config.volumes, probe or default_probe)
     coordinator = ScanCoordinator(scanner)
+    hls = HlsHub()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         stop = threading.Event()
+        hls.start()
         if schedule:
             interval = config.scan_interval_minutes * 60
 
@@ -72,11 +76,13 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
             threading.Thread(target=loop, daemon=True).start()
         yield
         stop.set()
+        hls.close()
 
     app = FastAPI(lifespan=lifespan)
     app.state.catalog = catalog
     app.state.scanner = scanner
     app.state.coordinator = coordinator
+    app.state.hls = hls
 
     def mounted() -> set[str]:
         return catalog.mounted_names()
@@ -136,17 +142,10 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
                 media_type="video/mp4",
                 headers={"Cache-Control": "no-store"},
             )
-        audio = 0 if a is None or a < 0 else min(a, 31)
-        if not math.isfinite(t) or t < 0:
-            t = 0
-        duration = row["duration"]
-        if duration and t > duration:
-            t = duration
-        ffmpeg = config.ffmpeg
-        if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
-            raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
+        audio, start = _audio_and_start(a, t, row["duration"])
+        prepared = _require_ffmpeg(config.ffmpeg)
         process, first, stderr = await _start_ffmpeg(
-            ffmpeg_remux_command(ffmpeg, str(media), t, "libx264", audio)
+            ffmpeg_remux_command(prepared, str(media), start, "libx264", audio)
         )
         if process is None or not first:
             raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
@@ -155,6 +154,58 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
             media_type="video/mp4",
             headers={"Cache-Control": "no-store"},
         )
+
+    @app.get("/api/videos/{video_id}/hls.m3u8")
+    async def hls_playlist(video_id: int, t: float = Query(0), a: Optional[int] = Query(None)):
+        row, media = _playable_row(video_id)
+        if playback_kind(row["ext"]) == "direct" and a is None:
+            raise HTTPException(status_code=404, detail="Для этого файла поток HLS не нужен")
+        audio, start = _audio_and_start(a, t, row["duration"])
+        prepared = _require_ffmpeg(config.ffmpeg)
+        key = f"{video_id}:{start:.3f}:{audio}"
+
+        def command_for(directory: Path):
+            return ffmpeg_hls_command(prepared, str(media), start, directory, "libx264", audio)
+
+        session = hls.open_session(video_id, key, command_for)
+        if not await _wait_hls(session):
+            session.log_failure()
+            raise HTTPException(status_code=500, detail="Не удалось подготовить видео для браузера")
+        base = f"/api/videos/{video_id}/hls/{session.token}/"
+        return Response(
+            rewrite_hls_playlist(session.playlist_text(), base),
+            media_type="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/videos/{video_id}/hls/{token}/{name}")
+    async def hls_segment(video_id: int, token: str, name: str):
+        if not _safe_segment_name(name):
+            raise HTTPException(status_code=404, detail="Фрагмент не найден")
+        session = hls.find(token)
+        if session is None or session.video_id != video_id:
+            raise HTTPException(status_code=404, detail="Фрагмент не найден")
+        path = session.directory / name
+        for _ in range(40):
+            if path.is_file():
+                return FileResponse(path, media_type="video/MP2T", headers={"Cache-Control": "no-store"})
+            if session.process.poll() is not None:
+                break
+            await asyncio.sleep(0.25)
+        raise HTTPException(status_code=404, detail="Фрагмент ещё не готов")
+
+    def _playable_row(video_id: int):
+        row = catalog.get_video(video_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Файл не найден")
+        kind = playback_kind(row["ext"])
+        if kind == "none":
+            raise HTTPException(status_code=415, detail="Просмотр этого формата в браузере недоступен")
+        volume = volume_for(row)
+        media = Path(row["abs_path"])
+        if not path_inside(Path(volume.path), media):
+            raise HTTPException(status_code=404, detail="Файл сейчас недоступен")
+        return row, media
 
     @app.get("/")
     def index() -> FileResponse:
@@ -166,6 +217,38 @@ def create_app(config: Config, *, schedule: bool = True, probe=None) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
+
+
+def _audio_and_start(audio_index: Optional[int], start: float, duration) -> tuple[int, float]:
+    audio = 0 if audio_index is None or audio_index < 0 else min(audio_index, 31)
+    if not math.isfinite(start) or start < 0:
+        start = 0
+    if duration and start > duration:
+        start = duration
+    return audio, start
+
+
+def _require_ffmpeg(ffmpeg: str) -> str:
+    if shutil.which(ffmpeg) is None and not Path(ffmpeg).is_file():
+        raise HTTPException(status_code=503, detail="На сервере не найден ffmpeg")
+    return ffmpeg
+
+
+def _safe_segment_name(name: str) -> bool:
+    if len(name) > 32 or not name.startswith("seg") or not name.endswith(".ts"):
+        return False
+    return name[3:-3].isdigit()
+
+
+async def _wait_hls(session, timeout: float = 45) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if session.playlist_ready():
+            return True
+        if session.process.poll() is not None:
+            return session.playlist_ready()
+        await asyncio.sleep(0.25)
+    return False
 
 
 async def _call(func, *args):

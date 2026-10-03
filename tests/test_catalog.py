@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Config, Volume, load_config
 from app.main import create_app
-from app.playback import ffmpeg_remux_command, playback_kind
+from app.playback import ffmpeg_hls_command, ffmpeg_remux_command, playback_kind, rewrite_hls_playlist
 from app.probe import parse_probe
 
 
@@ -227,6 +227,10 @@ def test_playback_routes(tmp_path: Path):
         assert remux.status_code == 503
         avi = client.get(f"/api/videos/{files['old.avi']['id']}/stream")
         assert avi.status_code == 503
+        hls = client.get(f"/api/videos/{files['film.mkv']['id']}/hls.m3u8")
+        assert hls.status_code == 503
+        missing = client.get(f"/api/videos/{files['film.mkv']['id']}/hls/nope/seg00000.ts")
+        assert missing.status_code == 404
         started = client.post("/api/scan")
         assert started.status_code == 202
 
@@ -265,6 +269,14 @@ def test_playback_helpers():
     assert "-ss" not in still
     chosen = ffmpeg_remux_command("ffmpeg", "/Volumes/lib2/a.mkv", 0, audio_index=1)
     assert "0:a:1?" in chosen
+    hls = ffmpeg_hls_command("ffmpeg", "/Volumes/lib2/a.mkv", 12.5, Path("/tmp/hls"))
+    assert hls[hls.index("-ss") + 1] == "12.500"
+    assert "hls" in hls
+    assert "aac_low" in hls
+    assert hls[-1].endswith("index.m3u8")
+    playlist = rewrite_hls_playlist("#EXTM3U\n#EXTINF:4.0,\nseg00000.ts\n", "/api/videos/5/hls/token/")
+    assert "seg00000.ts" in playlist
+    assert playlist.splitlines()[-1] == "/api/videos/5/hls/token/seg00000.ts"
     info = parse_probe(
         {
             "format": {"duration": "3.5"},
