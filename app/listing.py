@@ -142,6 +142,7 @@ def build_listing(rows: list[dict], directories: list[dict], folder: str, mounte
         }
         for name, count in folders.items()
     ]
+    folder_rows = [item for item in folder_rows if item["count"] > 0]
     folder_rows.sort(key=lambda item: item["name"].casefold())
     files.sort(key=lambda item: item["name"].casefold())
     return {"path": folder, "folders": folder_rows, "files": files}

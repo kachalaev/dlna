@@ -248,23 +248,25 @@ function paintResume() {
 
 function renderCrumbs(folder) {
   crumbsEl.replaceChildren();
-  const root = document.createElement("button");
-  root.type = "button";
-  root.textContent = "КачАрхив";
-  root.addEventListener("click", () => navigateListing({}));
-  crumbsEl.append(root);
-  if (!folder) return;
+  if (!folder) {
+    crumbsEl.hidden = true;
+    return;
+  }
+  crumbsEl.hidden = false;
   const parts = folder.split("/");
   parts.forEach((part, index) => {
-    const sep = document.createElement("span");
-    sep.className = "sep";
-    sep.textContent = "/";
+    if (index > 0) {
+      const sep = document.createElement("span");
+      sep.className = "sep";
+      sep.textContent = "/";
+      crumbsEl.append(sep);
+    }
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = part;
     const path = parts.slice(0, index + 1).join("/");
     button.addEventListener("click", () => navigateListing({ folder: path }));
-    crumbsEl.append(sep, button);
+    crumbsEl.append(button);
   });
 }
 
@@ -648,7 +650,8 @@ async function renderListingBody(folder, query, gen, play) {
   const videos = data.files.filter((file) => file.playback !== "audio");
   const nodes = [];
   if (audios.length) nodes.push(takeAlbum(audios, data.path, play));
-  nodes.push(...data.folders.map(folderRow), ...videos.map(fileRow));
+  const folders = data.folders.filter((item) => item.count > 0);
+  nodes.push(...folders.map(folderRow), ...videos.map(fileRow));
   if (!nodes.length) {
     const scanning = statusEl.textContent.startsWith("Идёт обновление");
     nodes.push(note(scanning ? "Каталог обновляется. Файлы появятся по мере обхода." : "В этой папке пусто."));
