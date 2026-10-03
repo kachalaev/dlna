@@ -240,7 +240,7 @@ function renderCrumbs(folder) {
   crumbsEl.replaceChildren();
   const root = document.createElement("button");
   root.type = "button";
-  root.textContent = "Архив";
+  root.textContent = "КачАрхив";
   root.addEventListener("click", () => navigateListing({}));
   crumbsEl.append(root);
   if (!folder) return;
