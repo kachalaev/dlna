@@ -490,6 +490,7 @@ function bootPlayer() {
   slider.setAttribute("aria-label", "Позиция");
   let index = -1;
   let scrubbing = false;
+  let readyToAdvance = false;
   let shuffle = localStorage.getItem("archive-shuffle") === "1";
   let upcoming = [];
   let played = [];
@@ -627,9 +628,29 @@ function bootPlayer() {
     played = index >= 0 ? [index] : [];
   };
 
+  function goNext() {
+    if (!playlist.length) return;
+    if (shuffle) {
+      if (!upcoming.length) upcoming = shuffledCopy(queueRest());
+      if (upcoming.length) playAt(upcoming.shift());
+      else setIcon(play, "play", "Слушать");
+      return;
+    }
+    const target = neighbor(1);
+    if (target >= 0) playAt(target);
+    else setIcon(play, "play", "Слушать");
+  }
+
+  function advance() {
+    if (!readyToAdvance) return;
+    readyToAdvance = false;
+    window.setTimeout(goNext, 0);
+  }
+
   playAt = (nextIndex, keepHistory) => {
     const file = playlist[nextIndex];
     if (!file) return;
+    readyToAdvance = false;
     heard.add(file.id);
     if (shuffle && !keepHistory) {
       upcoming = upcoming.filter((item) => item !== nextIndex);
@@ -693,8 +714,14 @@ function bootPlayer() {
     if (target >= 0) playAt(target);
     else if (index < 0) play.click();
   });
-  node.addEventListener("play", () => setIcon(play, "pause", "Пауза"));
-  node.addEventListener("pause", () => setIcon(play, "play", "Слушать"));
+  node.addEventListener("play", () => {
+    readyToAdvance = true;
+    setIcon(play, "pause", "Пауза");
+  });
+  node.addEventListener("pause", () => {
+    setIcon(play, "play", "Слушать");
+    if (node.ended) advance();
+  });
   node.addEventListener("loadedmetadata", paint);
   node.addEventListener("timeupdate", () => {
     const current = node.currentTime || 0;
@@ -702,16 +729,7 @@ function bootPlayer() {
     if (!scrubbing && duration) slider.value = String(Math.min(duration, current));
     time.textContent = `${formatDuration(current)}${duration ? ` / ${formatDuration(duration)}` : ""}`;
   });
-  node.addEventListener("ended", () => {
-    if (shuffle) {
-      if (upcoming.length) playAt(upcoming.shift());
-      else setIcon(play, "play", "Слушать");
-      return;
-    }
-    const target = neighbor(1);
-    if (target >= 0) playAt(target);
-    else setIcon(play, "play", "Слушать");
-  });
+  node.addEventListener("ended", advance);
   node.addEventListener("error", () => {
     now.textContent = "Не удалось воспроизвести запись";
     setIcon(play, "play", "Слушать");
@@ -719,9 +737,9 @@ function bootPlayer() {
   slider.addEventListener("pointerdown", () => {
     scrubbing = true;
   });
-  slider.addEventListener("change", () => {
+  slider.addEventListener("change", (event) => {
     scrubbing = false;
-    if (index < 0) return;
+    if (!event.isTrusted || index < 0) return;
     node.currentTime = Number(slider.value) || 0;
   });
   const mix = document.createElement("button");
